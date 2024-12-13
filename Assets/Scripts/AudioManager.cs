@@ -8,12 +8,11 @@ public class Sound
 {
     public string name;
     public AudioClip clip;
-    [Range(0, 1)]
+    [Range(0,1)]
     public float volume = 1;
-    [Range(-3, 3)]
+    [Range(-3,3)]
     public float pitch = 1;
     public bool loop = false;
-    public bool playOnAwake = false;
     public AudioSource source;
 
     public Sound()
@@ -33,17 +32,22 @@ public class AudioManager : MonoBehaviour
 
     void Awake()
     {
-        instance = this;
+        if (instance == null)
+            instance = this;
+        else
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        DontDestroyOnLoad(gameObject);
 
         foreach (Sound s in sounds)
         {
-            if (!s.source)
+            if(!s.source)
                 s.source = gameObject.AddComponent<AudioSource>();
 
             s.source.clip = s.clip;
-            s.source.playOnAwake = s.playOnAwake;
-            if (s.playOnAwake)
-                s.source.Play();
 
             s.source.volume = s.volume;
             s.source.pitch = s.pitch;
