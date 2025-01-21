@@ -11,7 +11,7 @@ public class ABBRobotController : MonoBehaviour
         public string name;
         public List<Transform> points = new List<Transform>();
         public bool activateManually = false;
-        public float customDelay = 0f;
+        public float pointDelay = 0f; // Delay between individual points in this function
         public bool isLooping = false;
         public AnimationCurve speedCurve = AnimationCurve.Linear(0, 1, 1, 1);
         public bool useLocalSpace = false;
@@ -20,7 +20,7 @@ public class ABBRobotController : MonoBehaviour
     [Header("Robot Configuration")]
     public List<RobotFunction> robotFunctions = new List<RobotFunction>();
     public float baseSpeed = 5f;
-    public float commonDelay = 2f;
+    public float functionDelay = 2f; // Delay between each welding function
     public bool pauseAutomation = false;
 
     [Header("Movement Settings")]
@@ -124,8 +124,8 @@ public class ABBRobotController : MonoBehaviour
                 {
                     if (!function.activateManually && !isExecutingFunction)
                     {
-                        float delay = function.customDelay > 0 ? function.customDelay : commonDelay;
-                        yield return new WaitForSeconds(delay);
+                        // Wait for the delay between welding functions
+                        yield return new WaitForSeconds(functionDelay);
 
                         if (!pauseAutomation)
                         {
@@ -220,7 +220,8 @@ public class ABBRobotController : MonoBehaviour
 
                 float journeyLength = Vector3.Distance(GetCurrentPosition(useLocal), targetPosition);
                 float startTime = Time.time;
-                // Only play audio if there's actually movement to perform
+
+                // Play audio for movement
                 if (journeyLength > positionThreshold && audioSource != null)
                 {
                     audioSource.loop = true;
@@ -247,17 +248,13 @@ public class ABBRobotController : MonoBehaviour
                     // Smoothly adjust pitch based on speed
                     if (audioSource != null && audioSource.isPlaying)
                     {
-                        // Map speedMultiplier to our desired pitch range
                         float targetPitch = Mathf.Lerp(minPitch, maxPitch, speedMultiplier) * audioPlaybackSpeed;
-
-                        // Smoothly transition to target pitch
                         currentPitch = Mathf.SmoothDamp(
                             currentPitch,
                             targetPitch,
                             ref pitchVelocity,
                             pitchSmoothTime
                         );
-
                         audioSource.pitch = currentPitch;
                     }
 
@@ -310,7 +307,9 @@ public class ABBRobotController : MonoBehaviour
                 }
 
                 OnPointReached?.Invoke(function.name, targetPoint.position);
-                yield return new WaitForSeconds(0.5f);
+
+                // Wait for the delay between points
+                yield return new WaitForSeconds(function.pointDelay);
             }
         } while (function.isLooping && !pauseAutomation);
 
@@ -368,7 +367,6 @@ public class ABBRobotController : MonoBehaviour
         {
             if (function.points.Count > 0)
             {
-                // Draw movement paths
                 Gizmos.color = function.useLocalSpace ? Color.blue : Color.yellow;
                 for (int i = 0; i < function.points.Count - 1; i++)
                 {
@@ -378,7 +376,6 @@ public class ABBRobotController : MonoBehaviour
                     }
                 }
 
-                // Draw points
                 Gizmos.color = Color.green;
                 foreach (var point in function.points)
                 {
@@ -387,7 +384,6 @@ public class ABBRobotController : MonoBehaviour
                         Gizmos.DrawWireSphere(point.position, 0.05f);
                         if (useRotation)
                         {
-                            // Draw forward direction for rotation reference
                             Gizmos.DrawRay(point.position, point.forward * 0.2f);
                         }
                     }
@@ -395,7 +391,6 @@ public class ABBRobotController : MonoBehaviour
             }
         }
 
-        // Draw robot base reference frame
         if (robotBase != null)
         {
             float axisLength = 0.5f;
