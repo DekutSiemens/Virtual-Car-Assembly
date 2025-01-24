@@ -1,23 +1,31 @@
 using UnityEngine;
+using System.Collections;
 
 public class WeldingController : MonoBehaviour
 {
     [System.Serializable]
-    public class WeldingSequence
+    public class TiltWorktableSequence
     {
-        public string functionNameTrigger; // Name of the ABB function that triggers this sequence
-        public bool tilt45;               // Should this sequence trigger Tilt45?
-        public bool tiltNegative45;       // Should this sequence trigger Tilt-45?
-        public bool resetTilts ;
+        public string functionNameTrigger;
+        public bool tilt45;
+        public bool tiltNegative45;
+        public bool resetTilts;
+        public bool positionerTurn180;
+        public bool positionerTurnNegative180;
+        public bool resetPositionerTurns;
     }
 
     [Header("References")]
     public ABBRobotController robotController;
-    public Animator weldingAnimator;
-    public float resumeDelay = 10.0f;
+    public Animator worktableAnimator;
+    public Animator positionerAnimator;
 
-    [Header("Welding Sequences")]
-    public WeldingSequence[] weldingSequences;
+    [Header("Timing Settings")]
+    public float resumeDelay = 10.0f;         // Delay before resuming automation
+    public float tiltingStartDelay = 2.0f;   // Delay before starting the tilting sequence
+
+    [Header("Tilt Sequence")]
+    public TiltWorktableSequence[] TiltingSequence;
 
     private void Start()
     {
@@ -26,56 +34,88 @@ public class WeldingController : MonoBehaviour
             robotController = FindObjectOfType<ABBRobotController>();
         }
 
-        // Subscribe to the ABB Robot Controller's events
         if (robotController != null)
         {
-            robotController.OnFunctionComplete += HandleFunctionComplete;
+            // Subscribe to the OnFunctionStart event
+            robotController.OnFunctionStart += HandleFunctionStart;
         }
         else
         {
             Debug.LogError("No ABBRobotController found in the scene!");
         }
 
-        if (weldingAnimator == null)
+        ValidateReferences();
+    }
+
+    private void ValidateReferences()
+    {
+        if (worktableAnimator == null)
         {
             Debug.LogError("Please assign an Animator component for the welding animations!");
         }
+        if (positionerAnimator == null)
+        {
+            Debug.LogError("Please assign an Animator component for the worktable animations!");
+        }
     }
 
-    private void HandleFunctionComplete(string functionName)
+    private void HandleFunctionStart(string functionName)
     {
-        // Find if this function should trigger a welding sequence
-        foreach (var sequence in weldingSequences)
+        foreach (var sequence in TiltingSequence)
         {
             if (sequence.functionNameTrigger == functionName)
             {
-                StartWeldingSequence(sequence);
+                // Pause automation immediately when the function starts
+                robotController.pauseAutomation = true;
+
+                // Start the tilting sequence with a delay
+                StartCoroutine(DelayedTiltingSequence(sequence));
                 break;
             }
         }
     }
 
-    private void StartWeldingSequence(WeldingSequence sequence)
+    private IEnumerator DelayedTiltingSequence(TiltWorktableSequence sequence)
     {
-        // Pause the robot automation
-        robotController.pauseAutomation = true;
+        // Wait for the specified delay before starting the tilting sequence
+        yield return new WaitForSeconds(tiltingStartDelay);
 
-        // Set the animation bools
+        // Start the tilting and positioner animations
+        StartTiltingSequence(sequence);
+
+        // Schedule automation resume after the tilting sequence
+        Invoke(nameof(ResumeAutomation), resumeDelay);
+    }
+
+    private void StartTiltingSequence(TiltWorktableSequence sequence)
+    {
+        // Tilt animations
         if (sequence.tilt45)
         {
-            weldingAnimator.SetBool("Tilt45", true);
+            worktableAnimator.SetBool("Tilt45", true);
         }
         if (sequence.tiltNegative45)
         {
-            weldingAnimator.SetBool("Tilt-45", true);
+            worktableAnimator.SetBool("Tilt-45", true);
         }
         if (sequence.resetTilts)
         {
-            ResetWeldingTilts();
+            ResetTableTilts();
         }
 
-        // Resume robot automation after a short delay
-        Invoke("ResumeAutomation", resumeDelay);
+        // Worktable Positioner turn animations
+        if (sequence.positionerTurn180)
+        {
+            positionerAnimator.SetBool("Turn180", true);
+        }
+        if (sequence.positionerTurnNegative180)
+        {
+            positionerAnimator.SetBool("Turn-180", true);
+        }
+        if (sequence.resetPositionerTurns)
+        {
+            ResetWorkTablePositionerTurns();
+        }
     }
 
     private void ResumeAutomation()
@@ -83,19 +123,23 @@ public class WeldingController : MonoBehaviour
         robotController.pauseAutomation = false;
     }
 
-    public void ResetWeldingTilts()
+    public void ResetTableTilts()
     {
-        // Reset both tilt animations to false
-        weldingAnimator.SetBool("Tilt45", false);
-        weldingAnimator.SetBool("Tilt-45", false);
+        worktableAnimator.SetBool("Tilt45", false);
+        worktableAnimator.SetBool("Tilt-45", false);
+    }
+
+    public void ResetWorkTablePositionerTurns()
+    {
+        positionerAnimator.SetBool("Turn180", false);
+        positionerAnimator.SetBool("Turn-180", false);
     }
 
     private void OnDestroy()
     {
-        // Unsubscribe from events when the component is destroyed
         if (robotController != null)
         {
-            robotController.OnFunctionComplete -= HandleFunctionComplete;
+            robotController.OnFunctionStart -= HandleFunctionStart;
         }
     }
 }

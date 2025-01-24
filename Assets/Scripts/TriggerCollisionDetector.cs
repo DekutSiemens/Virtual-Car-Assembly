@@ -61,7 +61,7 @@ public class TriggerCollisionDetector : MonoBehaviour
     {
         if (string.IsNullOrEmpty(targetTag) || other.CompareTag(targetTag))
         {
-            Debug.Log($"Trigger Enter: {other.gameObject.name}");
+            //Debug.Log($"Trigger Enter: {other.gameObject.name}");
             HandleTriggerEnter(other.gameObject);
         }
     }
@@ -70,7 +70,7 @@ public class TriggerCollisionDetector : MonoBehaviour
     {
         if (string.IsNullOrEmpty(targetTag) || other.CompareTag(targetTag))
         {
-            Debug.Log($"Trigger Stay: {other.gameObject.name}");
+            //Debug.Log($"Trigger Stay: {other.gameObject.name}");
             HandleTriggerStay(other.gameObject);
         }
     }
@@ -79,7 +79,7 @@ public class TriggerCollisionDetector : MonoBehaviour
     {
         if (string.IsNullOrEmpty(targetTag) || other.CompareTag(targetTag))
         {
-            Debug.Log($"Trigger Exit: {other.gameObject.name}");
+            //Debug.Log($"Trigger Exit: {other.gameObject.name}");
             HandleTriggerExit(other.gameObject);
         }
     }
