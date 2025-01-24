@@ -101,6 +101,7 @@ GameObject:
   - component: {fileID: 244983769285518990}
   - component: {fileID: 6451094298915647209}
   - component: {fileID: 5937525719624909691}
+  - component: {fileID: 4834839191684965427}
   m_Layer: 0
   m_Name: DoorLeft.008
   m_TagString: Untagged
@@ -200,6 +201,27 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
+--- !u!65 &4834839191684965427
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6216583770664945802}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 0.019999998, y: 0.023125796, z: 0.019999996}
+  m_Center: {x: -5.8275867e-19, y: 0.0000025331974, z: -9.313226e-10}
 --- !u!1 &7833423851539828580
 GameObject:
   m_ObjectHideFlags: 0
@@ -407,6 +429,7 @@ GameObject:
   - component: {fileID: 2963560085177876025}
   - component: {fileID: 1944607115230804074}
   - component: {fileID: 7456305144876505254}
+  - component: {fileID: 8554152672804987713}
   m_Layer: 0
   m_Name: DoorRight.007
   m_TagString: Untagged
@@ -506,3 +529,24 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
+--- !u!65 &8554152672804987713
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7965858344322947741}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 0.019999996, y: 0.023125796, z: 0.019999996}
+  m_Center: {x: 0, y: 0.0000025331974, z: -9.313226e-10}
