@@ -33,6 +33,17 @@ public class ABBRobotController : MonoBehaviour
     public bool useLocalSpace = false;
     public Transform robotBase;
 
+    [Header("Audio Settings")]
+    public float audioPlaybackSpeed = 1f;
+    public float minPitch = 0.8f;         // Minimum pitch even at slowest speed
+    public float maxPitch = 1.2f;         // Maximum pitch even at highest speed
+    public float pitchSmoothTime = 0.1f;  // How quickly pitch changes
+
+    private float currentPitch;
+    private float pitchVelocity;  // Used for SmoothDamp
+
+    private AudioSource audioSource;
+
     [Header("Debug Settings")]
     public bool logMovements = true;
 
@@ -56,6 +67,11 @@ public class ABBRobotController : MonoBehaviour
         if (robotBase == null)
         {
             robotBase = transform;
+        }
+        audioSource = GetComponent<AudioSource>();
+        if (audioSource != null)
+        {
+            audioSource.pitch = audioPlaybackSpeed;  // Set initial pitch
         }
         ResetFunctionTracking();
         StartAutomation();
@@ -234,6 +250,22 @@ public class ABBRobotController : MonoBehaviour
         isExecutingFunction = false;
         currentFunctionIndex++;
     }
+    public void SetAudioSpeed(float speed)
+    {
+        audioPlaybackSpeed = Mathf.Clamp(speed, 0.1f, 3f);  // Clamp between 0.1x and 3x speed
+        if (audioSource != null)
+        {
+            audioSource.pitch = audioPlaybackSpeed;
+        }
+    }
+    private Vector3 GetCurrentPosition(bool useLocal)
+    {
+        if (useLocal)
+        {
+            return robotBase.InverseTransformPoint(transform.position);
+        }
+        return transform.position;
+    }
 
     private IEnumerator MoveToPoint(Transform targetPoint, bool useLocal, float delay)
     {
@@ -250,6 +282,15 @@ public class ABBRobotController : MonoBehaviour
             }
 
             transform.position = Vector3.MoveTowards(transform.position, targetPosition, baseSpeed * Time.deltaTime);
+            float journeyLength = Vector3.Distance(GetCurrentPosition(useLocal), targetPosition);
+            float startTime = Time.time;
+            // Play audio for movement
+            if (journeyLength > positionThreshold && audioSource != null)
+            {
+                audioSource.loop = true;
+                audioSource.pitch = audioPlaybackSpeed;
+                audioSource.Play();
+            }
             if (useRotation)
             {
                 transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
