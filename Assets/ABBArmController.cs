@@ -250,6 +250,7 @@ public class ABBRobotController : MonoBehaviour
         isExecutingFunction = false;
         currentFunctionIndex++;
     }
+
     public void SetAudioSpeed(float speed)
     {
         audioPlaybackSpeed = Mathf.Clamp(speed, 0.1f, 3f);  // Clamp between 0.1x and 3x speed
@@ -258,6 +259,7 @@ public class ABBRobotController : MonoBehaviour
             audioSource.pitch = audioPlaybackSpeed;
         }
     }
+
     private Vector3 GetCurrentPosition(bool useLocal)
     {
         if (useLocal)
@@ -272,6 +274,14 @@ public class ABBRobotController : MonoBehaviour
         Vector3 targetPosition = useLocal ? robotBase.TransformPoint(targetPoint.localPosition) : targetPoint.position;
         Quaternion targetRotation = useLocal ? robotBase.rotation * targetPoint.localRotation : targetPoint.rotation;
 
+        // Play audio at the start of movement
+        if (audioSource != null)
+        {
+            audioSource.loop = true;
+            audioSource.pitch = audioPlaybackSpeed;
+            audioSource.Play();
+        }
+
         while (true)
         {
             float distance = Vector3.Distance(transform.position, targetPosition);
@@ -282,21 +292,26 @@ public class ABBRobotController : MonoBehaviour
             }
 
             transform.position = Vector3.MoveTowards(transform.position, targetPosition, baseSpeed * Time.deltaTime);
-            float journeyLength = Vector3.Distance(GetCurrentPosition(useLocal), targetPosition);
-            float startTime = Time.time;
-            // Play audio for movement
-            if (journeyLength > positionThreshold && audioSource != null)
+
+            // Adjust audio pitch based on movement speed
+            if (audioSource != null)
             {
-                audioSource.loop = true;
-                audioSource.pitch = audioPlaybackSpeed;
-                audioSource.Play();
+                float speedFactor = baseSpeed / 5f; // Normalize speed to a factor (adjust 5f as needed)
+                audioSource.pitch = Mathf.Clamp(audioPlaybackSpeed * speedFactor, minPitch, maxPitch);
             }
+
             if (useRotation)
             {
                 transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
             }
 
             yield return null;
+        }
+
+        // Stop audio when the movement is complete
+        if (audioSource != null)
+        {
+            audioSource.Stop();
         }
 
         OnPointReached?.Invoke(currentFunction.name, targetPoint.position);
