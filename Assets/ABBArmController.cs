@@ -15,6 +15,8 @@ public class ABBRobotController : MonoBehaviour
         public bool isLooping = false;
         public AnimationCurve speedCurve = AnimationCurve.Linear(0, 1, 1, 1);
         public bool useLocalSpace = false;
+        [Tooltip("Enable for seamless movement through all points")]
+        public bool seamlessMovement = false;
     }
 
     [Header("Robot Configuration")]
@@ -22,6 +24,10 @@ public class ABBRobotController : MonoBehaviour
     public float baseSpeed = 5f;
     public float functionDelay = 2f;
     public bool pauseAutomation = false;
+    [Tooltip("When enabled, the controller will restart from the first function after completing the last one")]
+    public bool loopAllFunctions = true;
+    [Tooltip("Delay before starting the next cycle when looping all functions")]
+    public float cycleCooldown = 3f;
 
     [Header("Movement Settings")]
     public bool useRotation = true;
@@ -35,12 +41,12 @@ public class ABBRobotController : MonoBehaviour
 
     [Header("Audio Settings")]
     public float audioPlaybackSpeed = 1f;
-    public float minPitch = 0.8f;         // Minimum pitch even at slowest speed
-    public float maxPitch = 1.2f;         // Maximum pitch even at highest speed
-    public float pitchSmoothTime = 0.1f;  // How quickly pitch changes
+    public float minPitch = 0.8f;
+    public float maxPitch = 1.2f;
+    public float pitchSmoothTime = 0.1f;
 
     private float currentPitch;
-    private float pitchVelocity;  // Used for SmoothDamp
+    private float pitchVelocity;
 
     private AudioSource audioSource;
 
@@ -51,6 +57,7 @@ public class ABBRobotController : MonoBehaviour
     public int currentFunctionIndex = -1;
     public int currentPointIndex = -1;
     public bool wasRunningBeforePause = false;
+    public int completedCycles = 0;
 
     private Coroutine currentMovementCoroutine;
     private Coroutine automationCoroutine;
@@ -60,6 +67,7 @@ public class ABBRobotController : MonoBehaviour
     public event Action<string> OnFunctionStart;
     public event Action<string> OnFunctionComplete;
     public event Action<string, Vector3> OnPointReached;
+    public event Action OnCycleComplete;
 
     private void Start()
     {
@@ -71,7 +79,8 @@ public class ABBRobotController : MonoBehaviour
         audioSource = GetComponent<AudioSource>();
         if (audioSource != null)
         {
-            audioSource.pitch = audioPlaybackSpeed;  // Set initial pitch
+            audioSource.pitch = audioPlaybackSpeed;
+            currentPitch = audioPlaybackSpeed;
         }
         ResetFunctionTracking();
         StartAutomation();
@@ -138,12 +147,37 @@ public class ABBRobotController : MonoBehaviour
                     if (currentFunctionIndex >= 0 && currentFunctionIndex < robotFunctions.Count)
                     {
                         var function = robotFunctions[currentFunctionIndex];
-                        ExecuteFunctionFromPoint(function, currentPointIndex + 1); // Resume from the next point
+                        ExecuteFunctionFromPoint(function, currentPointIndex + 1);
                     }
                 }
                 else
                 {
-                    for (int i = (currentFunctionIndex + 1); i < robotFunctions.Count; i++)
+                    // Check if we need to start from beginning or continue
+                    int startingIndex = (currentFunctionIndex + 1);
+
+                    // If we've completed all functions and need to loop
+                    if (startingIndex >= robotFunctions.Count && loopAllFunctions)
+                    {
+                        // Log cycle completion
+                        completedCycles++;
+                        if (logMovements) Debug.Log($"Completed full automation cycle #{completedCycles}");
+
+                        // Invoke cycle completion event
+                        OnCycleComplete?.Invoke();
+
+                        // Wait before restarting if cooldown is specified
+                        if (cycleCooldown > 0)
+                        {
+                            yield return new WaitForSeconds(cycleCooldown);
+                        }
+
+                        // Reset to first function
+                        startingIndex = 0;
+                        currentFunctionIndex = -1;
+                    }
+
+                    // Execute functions
+                    for (int i = startingIndex; i < robotFunctions.Count; i++)
                     {
                         var function = robotFunctions[i];
 
@@ -153,7 +187,7 @@ public class ABBRobotController : MonoBehaviour
 
                             if (!pauseAutomation)
                             {
-                                currentFunctionIndex = i; // Properly track the current function
+                                currentFunctionIndex = i;
                                 ExecuteFunction(function);
                                 yield return new WaitUntil(() => !isExecutingFunction);
                             }
@@ -174,7 +208,15 @@ public class ABBRobotController : MonoBehaviour
 
         currentFunction = function;
         isExecutingFunction = true;
-        currentMovementCoroutine = StartCoroutine(MoveToNextPointFromIndex(function, startPointIndex));
+
+        if (function.seamlessMovement && function.points.Count > 1)
+        {
+            currentMovementCoroutine = StartCoroutine(MoveSeamlesslyFromIndex(function, startPointIndex));
+        }
+        else
+        {
+            currentMovementCoroutine = StartCoroutine(MoveToNextPointFromIndex(function, startPointIndex));
+        }
     }
 
     private void ExecuteFunction(RobotFunction function)
@@ -183,9 +225,18 @@ public class ABBRobotController : MonoBehaviour
         {
             StopCoroutine(currentMovementCoroutine);
         }
+
         currentFunction = function;
         isExecutingFunction = true;
-        currentMovementCoroutine = StartCoroutine(MoveToNextPoint(function));
+
+        if (function.seamlessMovement && function.points.Count > 1)
+        {
+            currentMovementCoroutine = StartCoroutine(MoveSeamlessly(function));
+        }
+        else
+        {
+            currentMovementCoroutine = StartCoroutine(MoveToNextPoint(function));
+        }
     }
 
     public void PauseCurrentFunction()
@@ -201,6 +252,26 @@ public class ABBRobotController : MonoBehaviour
 
             Debug.Log($"Function Paused - Function: {currentFunctionIndex}, Point: {currentPointIndex}");
         }
+    }
+
+    public void ResetAndStartFromBeginning()
+    {
+        // Stop current execution
+        if (currentMovementCoroutine != null)
+        {
+            StopCoroutine(currentMovementCoroutine);
+            currentMovementCoroutine = null;
+        }
+
+        // Reset tracking variables
+        ResetFunctionTracking();
+        isExecutingFunction = false;
+        pauseAutomation = false;
+
+        // Restart automation
+        StartAutomation();
+
+        if (logMovements) Debug.Log("Robot reset to start from the beginning");
     }
 
     private IEnumerator MoveToNextPoint(RobotFunction function)
@@ -225,7 +296,6 @@ public class ABBRobotController : MonoBehaviour
         if (logMovements) Debug.Log($"Completed function: {function.name}");
         OnFunctionComplete?.Invoke(function.name);
         isExecutingFunction = false;
-        currentFunctionIndex++;
     }
 
     private IEnumerator MoveToNextPointFromIndex(RobotFunction function, int startIndex)
@@ -242,18 +312,192 @@ public class ABBRobotController : MonoBehaviour
 
                 yield return MoveToPoint(targetPoint, useLocal, function.pointDelay);
             }
-            startIndex = 0; // Reset startIndex for loops
+            startIndex = 0;
         } while (function.isLooping && !pauseAutomation);
 
         if (logMovements) Debug.Log($"Completed function: {function.name}");
         OnFunctionComplete?.Invoke(function.name);
         isExecutingFunction = false;
-        currentFunctionIndex++;
+    }
+
+    // New method for seamless movement through all points in the function
+    private IEnumerator MoveSeamlessly(RobotFunction function)
+    {
+        if (logMovements) Debug.Log($"Starting seamless function: {function.name}");
+        OnFunctionStart?.Invoke(function.name);
+
+        bool useLocal = function.useLocalSpace || useLocalSpace;
+
+        do
+        {
+            if (function.points.Count > 0)
+            {
+                yield return MoveSeamlesslyThroughPoints(function.points, useLocal);
+
+                // If there's a point delay specified, wait after completing the full path
+                if (function.pointDelay > 0)
+                {
+                    yield return new WaitForSeconds(function.pointDelay);
+                }
+            }
+        } while (function.isLooping && !pauseAutomation);
+
+        if (logMovements) Debug.Log($"Completed seamless function: {function.name}");
+        OnFunctionComplete?.Invoke(function.name);
+        isExecutingFunction = false;
+    }
+
+    // New method for seamless movement starting from a specific index
+    private IEnumerator MoveSeamlesslyFromIndex(RobotFunction function, int startIndex)
+    {
+        bool useLocal = function.useLocalSpace || useLocalSpace;
+
+        // Create a sublist of points starting from startIndex
+        List<Transform> remainingPoints = function.points.GetRange(startIndex, function.points.Count - startIndex);
+
+        do
+        {
+            if (remainingPoints.Count > 0)
+            {
+                yield return MoveSeamlesslyThroughPoints(remainingPoints, useLocal);
+
+                // For subsequent loops, use all points
+                remainingPoints = function.points;
+
+                // If there's a point delay specified, wait after completing the full path
+                if (function.pointDelay > 0)
+                {
+                    yield return new WaitForSeconds(function.pointDelay);
+                }
+            }
+        } while (function.isLooping && !pauseAutomation);
+
+        if (logMovements) Debug.Log($"Completed seamless function: {function.name}");
+        OnFunctionComplete?.Invoke(function.name);
+        isExecutingFunction = false;
+    }
+
+    // Core method that handles the actual seamless movement through a list of points
+    private IEnumerator MoveSeamlesslyThroughPoints(List<Transform> points, bool useLocal)
+    {
+        if (points.Count == 0) yield break;
+
+        // Play audio at the start of movement
+        if (audioSource != null)
+        {
+            audioSource.loop = true;
+            audioSource.pitch = audioPlaybackSpeed;
+            audioSource.Play();
+        }
+
+        for (int i = 0; i < points.Count; i++)
+        {
+            currentPointIndex = i;
+            Transform currentTarget = points[i];
+            if (currentTarget == null) continue;
+
+            Vector3 targetPosition = useLocal
+                ? robotBase.TransformPoint(currentTarget.localPosition)
+                : currentTarget.position;
+
+            Quaternion targetRotation = useLocal
+                ? robotBase.rotation * currentTarget.localRotation
+                : currentTarget.rotation;
+
+            // For the last point, we want to reach it exactly
+            bool isLastPoint = (i == points.Count - 1);
+
+            if (isLastPoint)
+            {
+                // For the last point, ensure we reach it exactly
+                while (Vector3.Distance(transform.position, targetPosition) > positionThreshold ||
+                      (useRotation && Quaternion.Angle(transform.rotation, targetRotation) > rotationThreshold))
+                {
+                    // Move toward final position
+                    transform.position = Vector3.MoveTowards(transform.position, targetPosition, baseSpeed * Time.deltaTime);
+
+                    // Rotate toward final rotation if needed
+                    if (useRotation)
+                    {
+                        transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation,
+                                                                     rotationSpeed * Time.deltaTime);
+                    }
+
+                    // Update audio pitch based on movement speed
+                    UpdateAudioPitch();
+
+                    yield return null;
+                }
+
+                // Ensure exact position and rotation
+                transform.position = targetPosition;
+                if (useRotation) transform.rotation = targetRotation;
+
+                OnPointReached?.Invoke(currentFunction.name, targetPosition);
+            }
+            else
+            {
+                // For points in the middle of the path, move toward them but don't stop
+                // Calculate the next position to determine how much to turn
+                Transform nextTarget = points[i + 1];
+                Vector3 nextPosition = useLocal
+                    ? robotBase.TransformPoint(nextTarget.localPosition)
+                    : nextTarget.position;
+
+                // Move until we're close enough to start considering the next point
+                while (Vector3.Distance(transform.position, targetPosition) > positionThreshold)
+                {
+                    // Move toward the current target
+                    transform.position = Vector3.MoveTowards(transform.position, targetPosition, baseSpeed * Time.deltaTime);
+
+                    // If using rotation, smoothly adjust heading toward the next point
+                    if (useRotation)
+                    {
+                        // Calculate the look-ahead position - blend between current target and next target
+                        float distanceToTarget = Vector3.Distance(transform.position, targetPosition);
+                        float blendFactor = Mathf.Clamp01(1.0f - (distanceToTarget / baseSpeed));
+                        Vector3 lookAheadPosition = Vector3.Lerp(targetPosition, nextPosition, blendFactor);
+
+                        // Create rotation toward the look-ahead position
+                        Quaternion lookRotation = Quaternion.LookRotation(lookAheadPosition - transform.position);
+                        transform.rotation = Quaternion.RotateTowards(transform.rotation, lookRotation,
+                                                                     rotationSpeed * Time.deltaTime);
+                    }
+
+                    // Update audio pitch based on movement speed
+                    UpdateAudioPitch();
+
+                    yield return null;
+                }
+
+                OnPointReached?.Invoke(currentFunction.name, targetPosition);
+            }
+        }
+
+        // Stop audio when the movement is complete
+        if (audioSource != null)
+        {
+            audioSource.Stop();
+        }
+    }
+
+    // Helper method to update audio pitch based on movement speed
+    private void UpdateAudioPitch()
+    {
+        if (audioSource != null && audioSource.isPlaying)
+        {
+            float speedFactor = baseSpeed / 5f; // Normalize speed to a factor
+            float targetPitch = Mathf.Clamp(audioPlaybackSpeed * speedFactor, minPitch, maxPitch);
+
+            // Smooth the pitch transition
+            currentPitch = Mathf.SmoothDamp(currentPitch, targetPitch, ref pitchVelocity, pitchSmoothTime);
+            audioSource.pitch = currentPitch;
+        }
     }
 
     public void SetAudioSpeed(float speed)
     {
-        audioPlaybackSpeed = Mathf.Clamp(speed, 0.1f, 3f);  // Clamp between 0.1x and 3x speed
+        audioPlaybackSpeed = Mathf.Clamp(speed, 0.1f, 3f);
         if (audioSource != null)
         {
             audioSource.pitch = audioPlaybackSpeed;
@@ -269,6 +513,7 @@ public class ABBRobotController : MonoBehaviour
         return transform.position;
     }
 
+    // Original method for non-seamless movement to a single point
     private IEnumerator MoveToPoint(Transform targetPoint, bool useLocal, float delay)
     {
         Vector3 targetPosition = useLocal ? robotBase.TransformPoint(targetPoint.localPosition) : targetPoint.position;
@@ -293,12 +538,8 @@ public class ABBRobotController : MonoBehaviour
 
             transform.position = Vector3.MoveTowards(transform.position, targetPosition, baseSpeed * Time.deltaTime);
 
-            // Adjust audio pitch based on movement speed
-            if (audioSource != null)
-            {
-                float speedFactor = baseSpeed / 5f; // Normalize speed to a factor (adjust 5f as needed)
-                audioSource.pitch = Mathf.Clamp(audioPlaybackSpeed * speedFactor, minPitch, maxPitch);
-            }
+            // Update audio pitch based on movement speed
+            UpdateAudioPitch();
 
             if (useRotation)
             {
