@@ -1,7 +1,7 @@
-using System;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.Events;
 
 namespace Unity.VRTemplate
 {
@@ -10,30 +10,46 @@ namespace Unity.VRTemplate
     /// </summary>
     public class StepManager : MonoBehaviour
     {
-        [Serializable]
-        class Step
+        [System.Serializable]
+        public class Step
         {
             [SerializeField]
-            public GameObject stepObject;
+            public GameObject stepObject; // The GameObject associated with this step
 
             [SerializeField]
-            public string buttonText;
+            public string buttonText; // The text to display on the button for this step
+
+            [SerializeField]
+            public UnityEvent onStepActivated; // Custom action to execute when this step is activated
         }
 
         [SerializeField]
-        public TextMeshProUGUI m_StepButtonTextField;
+        private TextMeshProUGUI m_StepButtonTextField; // Reference to the button's text field
 
         [SerializeField]
-        List<Step> m_StepList = new List<Step>();
+        private List<Step> m_StepList = new List<Step>(); // List of steps
 
-        int m_CurrentStepIndex = 0;
+        private int m_CurrentStepIndex = 0; // Index of the current step
 
+        /// <summary>
+        /// Moves to the next step in the sequence.
+        /// </summary>
         public void Next()
         {
+            // Deactivate the current step
             m_StepList[m_CurrentStepIndex].stepObject.SetActive(false);
+
+            // Move to the next step
             m_CurrentStepIndex = (m_CurrentStepIndex + 1) % m_StepList.Count;
+
+            // Activate the next step
             m_StepList[m_CurrentStepIndex].stepObject.SetActive(true);
+
+            // Update the button text
             m_StepButtonTextField.text = m_StepList[m_CurrentStepIndex].buttonText;
+
+            // Execute the custom action for the next step
+            m_StepList[m_CurrentStepIndex].onStepActivated?.Invoke();
         }
     }
 }
