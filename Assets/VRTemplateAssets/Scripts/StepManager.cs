@@ -51,5 +51,29 @@ namespace Unity.VRTemplate
             // Execute the custom action for the next step
             m_StepList[m_CurrentStepIndex].onStepActivated?.Invoke();
         }
+
+        /// <summary>
+        /// Resets the step sequence to the first step.
+        /// </summary>
+        public void Reset()
+        {
+            // Deactivate all steps except the first one
+            for (int i = 1; i < m_StepList.Count; i++)
+            {
+                m_StepList[i].stepObject.SetActive(false);
+            }
+
+            // Reset the current step index to the first step
+            m_CurrentStepIndex = 0;
+
+            // Activate the first step
+            m_StepList[m_CurrentStepIndex].stepObject.SetActive(true);
+
+            // Update the button text to the first step's text
+            m_StepButtonTextField.text = m_StepList[m_CurrentStepIndex].buttonText;
+
+            // Execute the custom action for the first step
+            m_StepList[m_CurrentStepIndex].onStepActivated?.Invoke();
+        }
     }
 }
