@@ -1,39 +1,54 @@
 using UnityEngine;
 using UnityEngine.Playables;
-using System.Collections;
 using System.Collections.Generic;
 
+[RequireComponent(typeof(PlayableDirector))] // Ensures PlayableDirector is attached
 public class PlaySteps : MonoBehaviour
 {
-    PlayableDirector director;
+    private PlayableDirector director;
     public List<Step> steps;
 
-
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
         director = GetComponent<PlayableDirector>();
+
+        if (director == null)
+        {
+            Debug.LogError($"[PlaySteps] Add a PlayableDirector component to '{gameObject.name}'!", this);
+        }
     }
 
     [System.Serializable]
-
     public class Step
     {
         public string name;
         public float time;
         public bool hasPlayed = false;
-    }   
+    }
 
-   public void PLayStepIndex(int index)
+    public void PLayStepIndex(int index)
     {
+        if (index < 0 || index >= steps.Count)
+        {
+            Debug.LogWarning($"[PlaySteps] Invalid step index {index}!", this);
+            return;
+        }
+
         Step step = steps[index];
-        if(!step.hasPlayed )
+        if (!step.hasPlayed)
         {
             step.hasPlayed = true;
 
-            director.Stop();
-            director.time =step.time;
-            director.Play();
+            if (director != null)
+            {
+                director.Stop();
+                director.time = step.time;
+                director.Play();
+            }
+            else
+            {
+                Debug.LogError($"[PlaySteps] PlayableDirector is missing on '{gameObject.name}'!", this);
+            }
         }
     }
 }

@@ -35,11 +35,11 @@ MonoBehaviour:
     m_StrikethroughOffset: 17.2
     m_StrikethroughThickness: 4.5
     m_TabWidth: 29
-  m_Material: {fileID: 7270345688116418923}
-  m_SourceFontFileGUID: 024cc50e5bf812041beeb97f1ddfb851
+  m_Material: {fileID: 5411136567185592412}
+  m_SourceFontFileGUID: bb35cb637cc07a344a1c88bbe57af4f2
   m_CreationSettings:
     sourceFontFileName: 
-    sourceFontFileGUID: 024cc50e5bf812041beeb97f1ddfb851
+    sourceFontFileGUID: bb35cb637cc07a344a1c88bbe57af4f2
     faceIndex: 0
     pointSizeSamplingMode: 0
     pointSize: 90
@@ -56,14 +56,14 @@ MonoBehaviour:
     fontStyleModifier: 0
     renderMode: 4165
     includeFontFeatures: 0
-  m_SourceFontFile: {fileID: 0}
+  m_SourceFontFile: {fileID: 12800000, guid: bb35cb637cc07a344a1c88bbe57af4f2, type: 3}
   m_SourceFontFilePath: 
   m_AtlasPopulationMode: 1
   InternalDynamicOS: 0
   m_GlyphTable: []
   m_CharacterTable: []
   m_AtlasTextures:
-  - {fileID: 7111584970639583816}
+  - {fileID: 148670054562766213}
   m_AtlasTextureIndex: 0
   m_IsMultiAtlasTexturesEnabled: 0
   m_GetFontFeatures: 1
@@ -141,7 +141,7 @@ MonoBehaviour:
     kerningPairs: []
   fallbackFontAssets: []
   atlas: {fileID: 0}
---- !u!28 &7111584970639583816
+--- !u!28 &148670054562766213
 Texture2D:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -187,7 +187,7 @@ Texture2D:
     offset: 0
     size: 0
     path: 
---- !u!21 &7270345688116418923
+--- !u!21 &5411136567185592412
 Material:
   serializedVersion: 8
   m_ObjectHideFlags: 0
@@ -223,7 +223,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MainTex:
-        m_Texture: {fileID: 7111584970639583816}
+        m_Texture: {fileID: 148670054562766213}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _OutlineTex:
@@ -260,9 +260,9 @@ Material:
     - _OutlineWidth: 0
     - _PerspectiveFilter: 0.875
     - _Reflectivity: 10
-    - _ScaleRatioA: 0.9
-    - _ScaleRatioB: 0.73125
-    - _ScaleRatioC: 0.73125
+    - _ScaleRatioA: 1
+    - _ScaleRatioB: 1
+    - _ScaleRatioC: 1
     - _ScaleX: 1
     - _ScaleY: 1
     - _ShaderFlags: 0

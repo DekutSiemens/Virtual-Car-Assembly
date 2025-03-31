@@ -81,7 +81,7 @@ public class UIFader : MonoBehaviour
         // Optional: Disable gameobject when fully faded out
         if (endAlpha == 0f)
         {
-            gameObject.SetActive(false);
+            //gameObject.SetActive(false);
         }
     }
 
