@@ -51,4 +51,14 @@ public class PlaySteps : MonoBehaviour
             }
         }
     }
+
+    public void ResetSteps()
+    {
+        foreach (Step step in steps)
+        {
+            step.hasPlayed = false;
+        }
+
+        Debug.Log("[PlaySteps] All steps have been reset.");
+    }
 }
