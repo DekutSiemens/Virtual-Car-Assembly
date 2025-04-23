@@ -37,7 +37,7 @@ namespace RootMotion.FinalIK {
 			if (_poseRoot != poseRoot) AutoMapping();
 			
 			if (poseRoot == null) return;
-			
+
 			// Something went wrong
 			if (children.Length != poseChildren.Length) {
 				Warning.Log("Number of children does not match with the pose", transform);
@@ -57,12 +57,35 @@ namespace RootMotion.FinalIK {
 			}
 		}
 
-		protected Transform[] children;
+        protected override void StoreCurrentPose()
+        {
+			lerpLocalPositions = new Vector3[children.Length];
+			lerpLocalRotations = new Quaternion[children.Length];
+
+			for (int i = 0; i < children.Length; i++)
+			{
+				lerpLocalPositions[i] = children[i].localPosition;
+				lerpLocalRotations[i] = children[i].localRotation;
+			}
+		}
+
+        protected override void BlendFromLastPose(float lerpTimer)
+        {
+			for (int i = 0; i < children.Length; i++)
+			{
+				children[i].localPosition = Vector3.Lerp(lerpLocalPositions[i], children[i].localPosition, lerpTimer);
+				children[i].localRotation = Quaternion.Lerp(lerpLocalRotations[i], children[i].localRotation, lerpTimer);
+			}
+		}
+
+        protected Transform[] children;
 
 		private Transform _poseRoot;
 		private Transform[] poseChildren;
 		private Vector3[] defaultLocalPositions;
 		private Quaternion[] defaultLocalRotations;
+		private Vector3[] lerpLocalPositions;
+		private Quaternion[] lerpLocalRotations;
 
 		protected void StoreDefaultState() {
 			defaultLocalPositions = new Vector3[children.Length];

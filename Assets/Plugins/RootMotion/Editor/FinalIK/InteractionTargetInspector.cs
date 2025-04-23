@@ -1,9 +1,7 @@
 ﻿using UnityEngine;
 using UnityEditor;
-using System.Collections;
-using RootMotion.FinalIK;
 
-namespace RootMotion.Demos {
+namespace RootMotion.FinalIK {
 
 	/*
 	 * Custom inspector and scene view helpers for the InteractionTarget.
@@ -70,6 +68,26 @@ namespace RootMotion.Demos {
             }
             EditorGUILayout.PropertyField(serializedObject.FindProperty("rotateOnce"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("usePoser"));
+
+            if (serializedObject.FindProperty("usePoser").boolValue)
+            {
+                var bones = serializedObject.FindProperty("bones");
+                EditorGUILayout.PropertyField(bones);
+
+                if (GUILayout.Button("Auto-Assign Bones"))
+                {
+                    var children = script.GetComponentsInChildren<Transform>();
+                    if (children.Length > 1)
+                    {
+                        bones.ClearArray();
+                        for (int i = 1; i < children.Length; i++)
+                        {
+                            bones.InsertArrayElementAtIndex(i - 1);
+                            bones.GetArrayElementAtIndex(i - 1).objectReferenceValue = children[i];
+                        }
+                    }
+                }
+            }
 
             if (serializedObject.ApplyModifiedProperties())
             {

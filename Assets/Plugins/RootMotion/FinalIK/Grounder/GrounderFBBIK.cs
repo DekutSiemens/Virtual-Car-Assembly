@@ -93,6 +93,12 @@ namespace RootMotion.FinalIK {
 			spineOffset = Vector3.zero;
 		}
 
+		public void Reinitiate()
+		{
+			initiated = false;
+			firstSolve = false;
+		}
+
 		private Transform[] feet = new Transform[2];
 		private Vector3 spineOffset;
 		private bool firstSolve;

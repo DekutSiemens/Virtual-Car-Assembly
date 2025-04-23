@@ -79,6 +79,13 @@ namespace RootMotion.FinalIK {
 		/// </summary>
 		[Tooltip("The master speed for all interactions.")]
 		public float speed = 1f;
+
+		/// <summary>
+		/// The speed of blending from previous interaction to current interaction if an ongoing interaction has been interrupted by another interaction.
+		/// </summary>
+		[Tooltip("The speed of blending from previous interaction to current interaction if an ongoing interaction has been interrupted by another interaction.")]
+		public float switchInteractionSpeed = 3f;
+
 		/// <summary>
 		/// If > 0, lerps all the FBBIK channels used by the Interaction System back to their default or initial values when not in interaction.
 		/// </summary>
@@ -842,6 +849,9 @@ namespace RootMotion.FinalIK {
             lastTime = Time.time;
 
 			for (int i = 0; i < interactionEffectors.Length; i++) interactionEffectors[i].Update(transform, speed, deltaTime);
+
+			// Switch from interaction to interaction
+			for (int i = 0; i < interactionEffectors.Length; i++) interactionEffectors[i].Switch(switchInteractionSpeed * speed, deltaTime);
 
 			// Interpolate to default pull, reach values
 			for (int i = 0; i < interactionEffectors.Length; i++) interactionEffectors[i].ResetToDefaults(resetToDefaultsSpeed * speed, deltaTime);

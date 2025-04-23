@@ -20,6 +20,9 @@ namespace RootMotion.FinalIK {
 			private Vector3 defaultLocalPosition;
 			private Quaternion defaultLocalRotation;
 
+			private Vector3 lerpLocalPosition;
+			private Quaternion lerpLocalRotation;
+
 			// Custom constructor
 			public Map(Transform bone, Transform target) {
 				this.bone = bone;
@@ -33,6 +36,12 @@ namespace RootMotion.FinalIK {
 				defaultLocalRotation = bone.localRotation;
 			}
 
+			public void StoreCurrentPose()
+            {
+				lerpLocalPosition = bone.localPosition;
+				lerpLocalRotation = bone.localRotation;
+            }
+
 			public void FixTransform() {
 				bone.localPosition = defaultLocalPosition;
 				bone.localRotation = defaultLocalRotation;
@@ -43,6 +52,12 @@ namespace RootMotion.FinalIK {
 				bone.localRotation = Quaternion.Lerp(bone.localRotation, target.localRotation, localRotationWeight);
 				bone.localPosition = Vector3.Lerp(bone.localPosition, target.localPosition, localPositionWeight);
 			}
+
+			public void BlendFromLastPose(float lerpTimer)
+            {
+				bone.localPosition = Vector3.Lerp(lerpLocalPosition, bone.localPosition, lerpTimer);
+				bone.localRotation = Quaternion.Lerp(lerpLocalRotation, bone.localRotation, lerpTimer);
+            }
 		}
 
 		public Map[] maps;
@@ -92,7 +107,23 @@ namespace RootMotion.FinalIK {
 			for (int i = 0; i < maps.Length; i++) maps[i].Update(rW, pW);
 		}
 
-		
+		protected override void StoreCurrentPose()
+		{
+			for (int i = 0; i < maps.Length; i++)
+			{
+				maps[i].StoreCurrentPose();
+			}
+		}
+
+		protected override void BlendFromLastPose(float lerpTimer)
+		{
+			for (int i = 0; i < maps.Length; i++)
+			{
+				maps[i].BlendFromLastPose(lerpTimer);
+			}
+		}
+
+
 		protected override void FixPoserTransforms() {
 			for (int i = 0; i < maps.Length; i++) {
 				maps[i].FixTransform();

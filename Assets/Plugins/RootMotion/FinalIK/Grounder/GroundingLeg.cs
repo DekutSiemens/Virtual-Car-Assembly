@@ -167,7 +167,7 @@ namespace RootMotion.FinalIK {
                         heelHit = GetRaycastHit(invertFootCenter ? -grounding.GetFootCenterOffset() : Vector3.zero);
                         capsuleHit = GetCapsuleHit(prediction);
 
-                        if (heelHit.collider != null || capsuleHit.collider != null) isGrounded = true;
+						if (heelHit.collider != null || capsuleHit.collider != null) isGrounded = true;
 
                         SetFootToPlane(capsuleHit.normal, capsuleHit.point, heelHit.point);
                         break;

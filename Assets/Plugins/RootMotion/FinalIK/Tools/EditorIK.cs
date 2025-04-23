@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using System.Collections;
+using UnityEngine.Playables;
 
 namespace RootMotion.FinalIK
 {
@@ -9,7 +10,8 @@ namespace RootMotion.FinalIK
     [ExecuteInEditMode]
     public class EditorIK : MonoBehaviour
     {
-        [Tooltip("If slot assigned, will update Animator before IK.")] public Animator animator;
+        [Tooltip("If slot assigned, will evaluate PlayableDirector before solving the IK.")] public PlayableDirector playableDirector;
+        [Tooltip("If slot assigned, will update Animator before solving the IK.")] public Animator animator;
         [Tooltip("Create/Final IK/Editor IK Pose")] public EditorIKPose defaultPose;
 
         [HideInInspector] public Transform[] bones = new Transform[0];
@@ -87,7 +89,14 @@ namespace RootMotion.FinalIK
             if (!ik.GetIKSolver().initiated) return;
             ik.GetIKSolver().executedInEditor = true;
 
-            if (animator != null && animator.runtimeAnimatorController != null) animator.Update(Time.deltaTime);
+            if (playableDirector != null)
+            {
+                playableDirector.Evaluate();
+            }
+            else
+            {
+                if (animator != null && animator.runtimeAnimatorController != null) animator.Update(Time.deltaTime);
+            }
 
             ik.GetIKSolver().Update();
         }

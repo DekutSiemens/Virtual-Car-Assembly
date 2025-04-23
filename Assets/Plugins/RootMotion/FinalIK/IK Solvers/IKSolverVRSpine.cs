@@ -457,11 +457,11 @@ namespace RootMotion.FinalIK {
                 TranslatePelvis(legs, headDeltaPosition, pelvisDeltaRotation, scale);
                 
                 FABRIKPass(animatedPelvisPos, rootUp, positionWeight);
-                
-                // Bend the spine to look towards chest target rotation
-                Bend(bones, pelvisIndex, chestIndex, chestTargetRotation, chestRotationOffset, chestClampWeight, false, neckStiffness * rotationWeight);
-                
-                if (LOD < 1 && chestGoalWeight > 0f) {
+
+				// Bend the spine to look towards chest target rotation
+				Bend(bones, pelvisIndex, chestIndex, chestTargetRotation, chestRotationOffset, chestClampWeight, false, neckStiffness * rotationWeight);
+				
+				if (LOD < 1 && chestGoalWeight > 0f) {
 					Quaternion c = Quaternion.FromToRotation(bones[chestIndex].solverRotation * chestForward, goalPositionChest - bones[chestIndex].solverPosition) * bones[chestIndex].solverRotation;
 					Bend(bones, pelvisIndex, chestIndex, c, chestRotationOffset, chestClampWeight, false, chestGoalWeight * rotationWeight);
 				}

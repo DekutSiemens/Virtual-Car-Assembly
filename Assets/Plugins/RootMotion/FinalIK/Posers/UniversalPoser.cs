@@ -23,7 +23,11 @@ namespace RootMotion.FinalIK
 
 			private Vector3 defaultLocalPosition;
 			private Quaternion defaultLocalRotation;
-			
+
+			private Vector3 lerpLocalPosition;
+			private Quaternion lerpLocalRotation;
+
+
 			// Custom constructor
 			public Map(Transform bone, Transform target)
 			{
@@ -38,6 +42,13 @@ namespace RootMotion.FinalIK
 				defaultLocalPosition = bone.localPosition;
 				defaultLocalRotation = bone.localRotation;
 			}
+
+			public void StoreCurrentPose()
+			{
+				lerpLocalPosition = bone.localPosition;
+				lerpLocalRotation = bone.localRotation;
+			}
+
 
 			public void FixTransform()
 			{
@@ -61,10 +72,16 @@ namespace RootMotion.FinalIK
 
 				//bone.localPosition = Vector3.Lerp(bone.localPosition, target.localPosition, localPositionWeight); //TODO
 			}
+
+			public void BlendFromLastPose(float lerpTimer)
+			{
+				bone.localPosition = Vector3.Lerp(lerpLocalPosition, bone.localPosition, lerpTimer);
+				bone.localRotation = Quaternion.Lerp(lerpLocalRotation, bone.localRotation, lerpTimer);
+			}
 		}
 
 		[Tooltip("Choose 2 axes of a finger bone. For example 1 pointing towards the next finger and 2 pointing up. Select a finger bone in the InteractionTarget hierarchy and see which local axis points towards the next bone and which local axis points up and set targetAxis1 and targetAxis2 accordingly. Then select a finger in this poser's hierarchy and do the same for axis1 and axis2.")]
-		public Vector3 targetAxis1, targetAxis2, axis1, axis2;
+		public Vector3 targetAxis1 = Vector3.forward, targetAxis2 = Vector3.up, axis1 = Vector3.forward, axis2 = Vector3.up;
 		[Tooltip("List of bones must match InteractionTarget's list of bones in both array size and hierarchy.")]
 		public Map[] bones;
 
@@ -75,6 +92,11 @@ namespace RootMotion.FinalIK
 			if (bones.Length != this.bones.Length)
             {
 				Debug.LogError("Trying to use UniversalPoser with an InteractionTarget that has a different number of bones. Bones must match with UniversalPoser bones in both array size and hierarchy", transform);
+				Debug.LogError("InterqactionTarget.bones: " + bones.Length);
+				for (int i = 0; i < bones.Length; i++)
+                {
+					Debug.LogError("   " + i + ": " + bones[i].name);
+                }
 				return;
             }
 
@@ -103,6 +125,22 @@ namespace RootMotion.FinalIK
 
 			// Lerping the localRotation and the localPosition
 			for (int i = 0; i < bones.Length; i++) bones[i].Update(rW, pW, targetAxis1, targetAxis2, axis1, axis2);
+		}
+
+		protected override void StoreCurrentPose()
+		{
+			for (int i = 0; i < bones.Length; i++)
+			{
+				bones[i].StoreCurrentPose();
+			}
+		}
+
+		protected override void BlendFromLastPose(float lerpTimer)
+		{
+			for (int i = 0; i < bones.Length; i++)
+			{
+				bones[i].BlendFromLastPose(lerpTimer);
+			}
 		}
 
 

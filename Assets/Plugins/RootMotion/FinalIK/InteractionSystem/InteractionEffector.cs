@@ -25,15 +25,18 @@ namespace RootMotion.FinalIK {
 		private Poser poser;
 		private IKEffector effector;
 		private float timer, length, weight, fadeInSpeed, defaultPositionWeight, defaultRotationWeight, defaultPull, defaultReach, defaultPush, defaultPushParent, defaultBendGoalWeight, defaultPoserWeight, resetTimer;
+		private float prevPositionWeight, prevRotationWeight, prevRotateBoneWeight, prevPull, prevReach, prevPush, prevPushParent, prevBendGoalWeight, prevPoserWeight, switchTimer;
 		private bool positionWeightUsed, rotationWeightUsed, pullUsed, reachUsed, pushUsed, pushParentUsed, bendGoalWeightUsed, poserUsed;
+		private bool prevPositionWeightUsed, prevRotationWeightUsed, prevRotateBoneWeightUsed, prevPullUsed, prevReachUsed, prevPushUsed, prevPushParentUsed, prevBendGoalWeightUsed, prevPoserUsed;
 		private bool pickedUp, defaults, pickUpOnPostFBBIK;
-		private Vector3 pickUpPosition, pausePositionRelative;
-		private Quaternion pickUpRotation, pauseRotationRelative;
+		private Vector3 pickUpPosition, pausePositionRelative, prevTargetPosition;
+		private Quaternion pickUpRotation, pauseRotationRelative, prevTargetRotation = Quaternion.identity, prevRotateBoneValue = Quaternion.identity;
 		private InteractionTarget interactionTarget;
 		private Transform target;
 		private List<bool> triggered = new List<bool>();
 		private InteractionSystem interactionSystem;
 		private bool started;
+		private bool isSwitching;
 
 		// The custom constructor
 		public InteractionEffector (FullBodyBipedEffector effectorType) {
@@ -65,6 +68,88 @@ namespace RootMotion.FinalIK {
 			defaultPush = interactionSystem.ik.solver.GetChain(effectorType).push;
 			defaultPushParent = interactionSystem.ik.solver.GetChain(effectorType).pushParent;
             defaultBendGoalWeight = interactionSystem.ik.solver.GetChain(effectorType).bendConstraint.weight;
+		}
+
+		/// <summary>
+		/// Store the current interaction values from which to interpolate to the next interaction
+		/// </summary>
+		public void StorePrevious(InteractionObject interactionObject)
+		{
+			if (interactionSystem == null) return;
+
+			// See which InteractionObject.WeightCurve.Types are used
+			prevTargetPosition = effector.position;
+			prevTargetRotation = effector.rotation;
+
+			prevPositionWeightUsed = interactionObject.CurveUsed(InteractionObject.WeightCurve.Type.PositionWeight);
+			prevRotationWeightUsed = interactionObject.CurveUsed(InteractionObject.WeightCurve.Type.RotationWeight);
+			prevRotateBoneWeightUsed = interactionObject.CurveUsed(InteractionObject.WeightCurve.Type.RotateBoneWeight);
+			prevPullUsed = interactionObject.CurveUsed(InteractionObject.WeightCurve.Type.Pull);
+			prevReachUsed = interactionObject.CurveUsed(InteractionObject.WeightCurve.Type.Reach);
+			prevPushUsed = interactionObject.CurveUsed(InteractionObject.WeightCurve.Type.Push);
+			prevPushParentUsed = interactionObject.CurveUsed(InteractionObject.WeightCurve.Type.PushParent);
+			prevBendGoalWeightUsed = interactionObject.CurveUsed(InteractionObject.WeightCurve.Type.BendGoalWeight);
+			prevPoserUsed = poser != null && interactionObject.CurveUsed(InteractionObject.WeightCurve.Type.PoserWeight);
+
+			prevPositionWeight = interactionSystem.ik.solver.GetEffector(effectorType).positionWeight;
+			prevRotationWeight = interactionSystem.ik.solver.GetEffector(effectorType).rotationWeight;
+			prevPoserWeight = poser != null ? poser.weight : 0f;
+			prevPull = interactionSystem.ik.solver.GetChain(effectorType).pull;
+			prevReach = interactionSystem.ik.solver.GetChain(effectorType).reach;
+			prevPush = interactionSystem.ik.solver.GetChain(effectorType).push;
+			prevPushParent = interactionSystem.ik.solver.GetChain(effectorType).pushParent;
+			prevBendGoalWeight = interactionSystem.ik.solver.GetChain(effectorType).bendConstraint.weight;
+
+			switchTimer = 0f;
+			isSwitching = true;
+		}
+
+		// Interpolate from previous to current interaction
+		public bool Switch(float speed, float deltaTime)
+		{
+			//if (!inInteraction) return false;
+			//if (isPaused) return false;
+			if (!isSwitching) return false;
+
+			switchTimer = Mathf.MoveTowards(switchTimer, 1f, deltaTime * speed);
+			
+			// Pull and Reach
+			if (effector.isEndEffector)
+			{
+				if (prevPullUsed) interactionSystem.ik.solver.GetChain(effectorType).pull = Mathf.Lerp(prevPull, interactionSystem.ik.solver.GetChain(effectorType).pull, switchTimer);
+				if (prevReachUsed) interactionSystem.ik.solver.GetChain(effectorType).reach = Mathf.Lerp(prevReach, interactionSystem.ik.solver.GetChain(effectorType).reach, switchTimer);
+				if (prevPushUsed) interactionSystem.ik.solver.GetChain(effectorType).push = Mathf.Lerp(prevPush, interactionSystem.ik.solver.GetChain(effectorType).push, switchTimer);
+				if (prevPushParentUsed) interactionSystem.ik.solver.GetChain(effectorType).pushParent = Mathf.Lerp(prevPushParent, interactionSystem.ik.solver.GetChain(effectorType).pushParent, switchTimer);
+				if (prevBendGoalWeightUsed) interactionSystem.ik.solver.GetChain(effectorType).bendConstraint.weight = Mathf.Lerp(prevBendGoalWeight, interactionSystem.ik.solver.GetChain(effectorType).bendConstraint.weight, switchTimer);
+			}
+
+			// Effector weights
+			if (prevPositionWeightUsed)
+			{
+				effector.positionWeight = Mathf.Lerp(prevPositionWeight, effector.positionWeight, switchTimer);
+				effector.position = Vector3.Lerp(prevTargetPosition, effector.position, switchTimer);
+			}
+			if (prevRotationWeightUsed)
+			{
+				effector.rotationWeight = Mathf.Lerp(prevRotationWeight, effector.rotationWeight, switchTimer);
+				effector.rotation = Quaternion.Lerp(prevTargetRotation, effector.rotation, switchTimer);
+			}
+
+			if (switchTimer >= 1f)
+			{
+				prevPullUsed = false;
+				prevReachUsed = false;
+				prevPushUsed = false;
+				prevPushParentUsed = false;
+				prevPositionWeightUsed = false;
+				prevRotationWeightUsed = false;
+				prevBendGoalWeightUsed = false;
+				prevPoserUsed = false;
+
+				isSwitching = false;
+			}
+
+			return true;
 		}
 
 		// Interpolate to default values when currently not in interaction
@@ -132,6 +217,8 @@ namespace RootMotion.FinalIK {
         // Start interaction
         public bool Start(InteractionObject interactionObject, string tag, float fadeInTime, bool interrupt)
         {
+			if (inInteraction && !interrupt) return false;
+
             // Get the InteractionTarget
             InteractionTarget interactionTarget = null;
             target = interactionObject.GetTarget(effectorType, tag);
@@ -142,8 +229,6 @@ namespace RootMotion.FinalIK {
 
         public bool Start(InteractionObject interactionObject, InteractionTarget interactionTarget, float fadeInTime, bool interrupt)
         {
-            this.interactionTarget = interactionTarget;
-            
             // If not in interaction, set effector positions to their bones
             if (!inInteraction)
             {
@@ -152,14 +237,23 @@ namespace RootMotion.FinalIK {
             }
             else
             {
-                if (!interrupt) return false;
-                else defaults = false;
+				if (!interrupt)
+				{
+					return false;
+				}
+				else
+				{
+					defaults = false;
+					StorePrevious(interactionObject);
+				}
             }
-            
-            target = interactionTarget != null? interactionTarget.transform: interactionObject.transform;
 
-            // Start the interaction
-            this.interactionObject = interactionObject;
+			this.interactionTarget = interactionTarget;
+
+			target = interactionTarget != null? interactionTarget.transform: interactionObject.transform;
+
+			// Start the interaction
+			this.interactionObject = interactionObject;
             if (interactionSystem.OnInteractionStart != null) interactionSystem.OnInteractionStart(effectorType, interactionObject);
             interactionObject.OnStartInteraction(interactionSystem);
 
@@ -190,16 +284,12 @@ namespace RootMotion.FinalIK {
                 {
 					if (interactionTarget.usePoser)
 					{
-						poser.poseRoot = target.transform;
-						poser.AutoMapping(interactionTarget.bones);
+						poser.SetPoseRoot(target.transform, interactionTarget.bones, interactionSystem.switchInteractionSpeed);
 					}
                 } else
                 {
-                    poser.poseRoot = null;
+					poser.SetPoseRoot(null, null, interactionSystem.switchInteractionSpeed);
                 }
-
-                //if (interactionTarget != null) poser.poseRoot = target.transform;
-                //else poser.poseRoot = null;
 
                 poser.AutoMapping();
             }
@@ -403,12 +493,29 @@ namespace RootMotion.FinalIK {
 
 			// Rotate the hands/feet to the RotateBoneWeight curve
 			float rotateBoneWeight = interactionObject.GetValue(InteractionObject.WeightCurve.Type.RotateBoneWeight, interactionTarget, timer) * weight;
+			
+			if (isSwitching)
+            {
+				rotateBoneWeight = Mathf.Lerp(prevRotateBoneWeight, rotateBoneWeight, switchTimer);
+            } else
+            {
+				prevRotateBoneWeight = rotateBoneWeight;
+            }
 
 			if (rotateBoneWeight > 0f) {
 				Quaternion r = pickedUp? interactionSystem.transform.rotation * pickUpRotation: effector.rotation;
 
 				Quaternion targetRotation = Quaternion.Slerp(effector.bone.rotation, r, rotateBoneWeight * rotateBoneWeight);
 				effector.bone.localRotation = Quaternion.Inverse(effector.bone.parent.rotation) * targetRotation;
+			}
+
+			if (isSwitching)
+			{
+				effector.bone.localRotation = Quaternion.Slerp(prevRotateBoneValue, effector.bone.localRotation, switchTimer);
+			}
+			else
+			{
+				prevRotateBoneValue = effector.bone.localRotation;
 			}
 
 			// Positioning the interaction object to the effector (not the bone, because it is still at its animated translation)

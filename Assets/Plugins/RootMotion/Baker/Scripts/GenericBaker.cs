@@ -91,7 +91,7 @@ namespace RootMotion
         {
             // TODO Length Multiplier
 
-            for (int i = 0; i < children.Length; i++) children[i].SetCurves(ref clip);
+            for (int i = 0; i < children.Length; i++) children[i].SetCurves(ref clip, keyReductionError);
         }
 
         protected override void OnSetKeyframes(float time, bool lastFrame)

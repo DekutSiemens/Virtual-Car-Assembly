@@ -531,14 +531,23 @@ namespace RootMotion
         }
 
         // Add curves to the AnimationClip for each channel
-        public void SetCurves(ref AnimationClip clip)
+        public void SetCurves(ref AnimationClip clip, float maxError)
         {
             if (recordPosition)
             {
+                BakerUtilities.ReduceKeyframes(posX, maxError);
+                BakerUtilities.ReduceKeyframes(posY, maxError);
+                BakerUtilities.ReduceKeyframes(posZ, maxError);
+
                 clip.SetCurve(relativePath, typeof(Transform), "localPosition.x", posX);
                 clip.SetCurve(relativePath, typeof(Transform), "localPosition.y", posY);
                 clip.SetCurve(relativePath, typeof(Transform), "localPosition.z", posZ);
             }
+
+            BakerUtilities.ReduceKeyframes(rotX, maxError);
+            BakerUtilities.ReduceKeyframes(rotY, maxError);
+            BakerUtilities.ReduceKeyframes(rotZ, maxError);
+            BakerUtilities.ReduceKeyframes(rotW, maxError);
 
             clip.SetCurve(relativePath, typeof(Transform), "localRotation.x", rotX);
             clip.SetCurve(relativePath, typeof(Transform), "localRotation.y", rotY);

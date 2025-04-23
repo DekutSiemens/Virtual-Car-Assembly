@@ -1,0 +1,296 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &798291799480875858
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7756875992887729165}
+  m_Layer: 0
+  m_Name: Siemens
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7756875992887729165
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 798291799480875858}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 4992869637580595992}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1001 &4809990663308199155
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 7756875992887729165}
+    m_Modifications:
+    - target: {fileID: -8679921383154817045, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 0.19018751
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 0.19018753
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 0.19018751
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -0.8739946
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 1.90575
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: -21.781988
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0.000000037748954
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+      propertyPath: m_Name
+      value: Siemens HMI
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: -6352253929798756351, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 7927675946757707548}
+    - targetCorrespondingSourceObject: {fileID: -6352253929798756351, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 3132521470418444335}
+    - targetCorrespondingSourceObject: {fileID: -6352253929798756351, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 9206927135727547808}
+  m_SourcePrefab: {fileID: 100100000, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+--- !u!4 &4992869637580595992 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+  m_PrefabInstance: {fileID: 4809990663308199155}
+  m_PrefabAsset: {fileID: 0}
+--- !u!23 &6546421263634176092 stripped
+MeshRenderer:
+  m_CorrespondingSourceObject: {fileID: -7486941418979271505, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+  m_PrefabInstance: {fileID: 4809990663308199155}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &7284791967880994034 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: -6352253929798756351, guid: 6749f90c545fc194e8c2e8c93a2aaa3e, type: 3}
+  m_PrefabInstance: {fileID: 4809990663308199155}
+  m_PrefabAsset: {fileID: 0}
+--- !u!65 &7927675946757707548
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7284791967880994034}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 0.15734152, y: 0.090483546, z: 0.008274769}
+  m_Center: {x: -0.10719763, y: 0.083263464, z: 0.0020740759}
+--- !u!54 &3132521470418444335
+Rigidbody:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7284791967880994034}
+  serializedVersion: 4
+  m_Mass: 1
+  m_Drag: 0
+  m_AngularDrag: 0.05
+  m_CenterOfMass: {x: 0, y: 0, z: 0}
+  m_InertiaTensor: {x: 1, y: 1, z: 1}
+  m_InertiaRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ImplicitCom: 1
+  m_ImplicitTensor: 1
+  m_UseGravity: 0
+  m_IsKinematic: 1
+  m_Interpolate: 0
+  m_Constraints: 0
+  m_CollisionDetection: 0
+--- !u!114 &9206927135727547808
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7284791967880994034}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8a35f6cfbfba9b548aaa00d52cfe8a50, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_InteractionManager: {fileID: 0}
+  m_Colliders:
+  - {fileID: 7927675946757707548}
+  m_InteractionLayers:
+    m_Bits: 1
+  m_DistanceCalculationMode: 1
+  m_SelectMode: 0
+  m_FocusMode: 1
+  m_CustomReticle: {fileID: 0}
+  m_AllowGazeInteraction: 0
+  m_AllowGazeSelect: 0
+  m_OverrideGazeTimeToSelect: 0
+  m_GazeTimeToSelect: 0.5
+  m_OverrideTimeToAutoDeselectGaze: 0
+  m_TimeToAutoDeselectGaze: 3
+  m_AllowGazeAssistance: 0
+  m_FirstHoverEntered:
+    m_PersistentCalls:
+      m_Calls:
+      - m_Target: {fileID: 6546421263634176092}
+        m_TargetAssemblyTypeName: UnityEngine.Renderer, UnityEngine
+        m_MethodName: set_material
+        m_Mode: 2
+        m_Arguments:
+          m_ObjectArgument: {fileID: 2100000, guid: a00d8e20c8de76f4582a8a87f8c215f0, type: 2}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Material, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
+  m_LastHoverExited:
+    m_PersistentCalls:
+      m_Calls:
+      - m_Target: {fileID: 6546421263634176092}
+        m_TargetAssemblyTypeName: UnityEngine.Renderer, UnityEngine
+        m_MethodName: set_material
+        m_Mode: 2
+        m_Arguments:
+          m_ObjectArgument: {fileID: 2100000, guid: 5418a16ba32c4ff449153b9f15a9e1cf, type: 2}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Material, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
+  m_HoverEntered:
+    m_PersistentCalls:
+      m_Calls:
+      - m_Target: {fileID: 6546421263634176092}
+        m_TargetAssemblyTypeName: UnityEngine.Renderer, UnityEngine
+        m_MethodName: set_material
+        m_Mode: 2
+        m_Arguments:
+          m_ObjectArgument: {fileID: 2100000, guid: a00d8e20c8de76f4582a8a87f8c215f0, type: 2}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Material, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
+  m_HoverExited:
+    m_PersistentCalls:
+      m_Calls:
+      - m_Target: {fileID: 6546421263634176092}
+        m_TargetAssemblyTypeName: UnityEngine.Renderer, UnityEngine
+        m_MethodName: set_material
+        m_Mode: 2
+        m_Arguments:
+          m_ObjectArgument: {fileID: 2100000, guid: 5418a16ba32c4ff449153b9f15a9e1cf, type: 2}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Material, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
+  m_FirstSelectEntered:
+    m_PersistentCalls:
+      m_Calls: []
+  m_LastSelectExited:
+    m_PersistentCalls:
+      m_Calls: []
+  m_SelectEntered:
+    m_PersistentCalls:
+      m_Calls: []
+  m_SelectExited:
+    m_PersistentCalls:
+      m_Calls: []
+  m_FirstFocusEntered:
+    m_PersistentCalls:
+      m_Calls: []
+  m_LastFocusExited:
+    m_PersistentCalls:
+      m_Calls: []
+  m_FocusEntered:
+    m_PersistentCalls:
+      m_Calls: []
+  m_FocusExited:
+    m_PersistentCalls:
+      m_Calls: []
+  m_Activated:
+    m_PersistentCalls:
+      m_Calls: []
+  m_Deactivated:
+    m_PersistentCalls:
+      m_Calls: []
+  m_StartingHoverFilters: []
+  m_StartingSelectFilters: []
+  m_StartingInteractionStrengthFilters: []

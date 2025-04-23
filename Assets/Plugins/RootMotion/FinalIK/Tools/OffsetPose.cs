@@ -14,28 +14,33 @@ namespace RootMotion.FinalIK {
 		[System.Serializable]
 		public class EffectorLink {
 
-			public FullBodyBipedEffector effector; // The effector type (this is just an enum)
-			public Vector3 offset; // Offset of the effector in this pose
-			public Vector3 pin; // Pin position relative to the solver root Transform
-			public Vector3 pinWeight; // Pin weight vector
+			[Tooltip("The effector type (this is just an enum)")] public FullBodyBipedEffector effector;
+			[Tooltip("Offset of the effector in this pose")] public Vector3 offset;
+			[Tooltip("Pin position relative to the solver root Transform")] public Vector3 pin;
+			[Tooltip("Pin weight vector")] public Vector3 pinWeight;
+			[Tooltip("Only applies for end effectors (hands, feet)")] public Vector3 rotationOffset;
 
 			// Apply positionOffset to the effector
 			public void Apply(IKSolverFullBodyBiped solver, float weight, Quaternion rotation) {
+				var e = solver.GetEffector(effector);
+
 				// Offset
-				solver.GetEffector(effector).positionOffset += rotation * offset * weight;
+				e.positionOffset += rotation * offset * weight;
 				
 				// Calculating pinned position
 				Vector3 pinPosition = solver.GetRoot().position + rotation * pin;
-				Vector3 pinPositionOffset = pinPosition - solver.GetEffector(effector).bone.position;
+				Vector3 pinPositionOffset = pinPosition - e.bone.position;
 				
 				Vector3 pinWeightVector = pinWeight * Mathf.Abs(weight);
 				
 				// Lerping to pinned position
-				solver.GetEffector(effector).positionOffset = new Vector3(
-					Mathf.Lerp(solver.GetEffector(effector).positionOffset.x, pinPositionOffset.x, pinWeightVector.x),
-					Mathf.Lerp(solver.GetEffector(effector).positionOffset.y, pinPositionOffset.y, pinWeightVector.y),
-					Mathf.Lerp(solver.GetEffector(effector).positionOffset.z, pinPositionOffset.z, pinWeightVector.z)
+				e.positionOffset = new Vector3(
+					Mathf.Lerp(e.positionOffset.x, pinPositionOffset.x, pinWeightVector.x),
+					Mathf.Lerp(e.positionOffset.y, pinPositionOffset.y, pinWeightVector.y),
+					Mathf.Lerp(e.positionOffset.z, pinPositionOffset.z, pinWeightVector.z)
 					);
+
+				if (e.isEndEffector) e.bone.localRotation *= Quaternion.Euler(rotationOffset * weight);
 			}
 		}
 
