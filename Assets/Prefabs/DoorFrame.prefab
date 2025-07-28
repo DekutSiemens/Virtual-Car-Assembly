@@ -276,8 +276,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 1, y: 1, z: 1.5963763}
-  m_Center: {x: 0, y: -0.00000016401026, z: -0.091542736}
+  m_Size: {x: 1, y: 0.9999944, z: 2.074523}
+  m_Center: {x: -0.000000003135722, y: -0.000000100484016, z: -0.056176387}
 --- !u!54 &5256510300285512516
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -333,16 +333,16 @@ AudioSource:
   m_audioClip: {fileID: 8300000, guid: 68b4bd9c8d49d40438e8f71527924123, type: 3}
   m_Resource: {fileID: 8300000, guid: 68b4bd9c8d49d40438e8f71527924123, type: 3}
   m_PlayOnAwake: 0
-  m_Volume: 0.5
-  m_Pitch: 1
+  m_Volume: 0.2
+  m_Pitch: 0.67
   Loop: 0
   Mute: 0
   Spatialize: 0
   SpatializePostEffects: 0
   Priority: 128
   DopplerLevel: 1
-  MinDistance: 1
-  MaxDistance: 3
+  MinDistance: 0.48162842
+  MaxDistance: 1.5394974
   Pan2D: 0
   rolloffMode: 0
   BypassEffects: 0
