@@ -1,27 +1,28 @@
 ﻿using UnityEngine;
-using UnityEngine.UI;
+using TMPro;
 using System.Collections;
 using System.Collections.Generic;
 
 namespace LudicWorlds
 {
     /// <summary>
-    /// Enhanced Debug Panel with inspector-assignable UI components and improved functionality
+    /// Enhanced Debug Panel with TextMeshPro support and inspector-assignable UI components
     /// Features: FPS monitoring, debug message display, status updates, and billboard behavior
     /// </summary>
     public class DebugPanel : MonoBehaviour
     {
         [Header("UI Components")]
         [SerializeField] private Canvas canvas;
-        [SerializeField] private Text debugText;
-        [SerializeField] private Text fpsText;
-        [SerializeField] private Text statusText;
+        [SerializeField] private TextMeshProUGUI debugText;
+        [SerializeField] private TextMeshProUGUI fpsText;
+        [SerializeField] private TextMeshProUGUI statusText;
 
         [Header("Display Settings")]
         [SerializeField] private int maxLines = 23;
-        [SerializeField] private bool enableBillboard = true;
-        [SerializeField] private bool rotateYAxisOnly = true;
         [SerializeField] private float fpsUpdateInterval = 0.5f;
+        [SerializeField] private bool autoSizeText = true;
+        [SerializeField] private float maxFontSize = 14f;
+        [SerializeField] private float minFontSize = 8f;
 
         [Header("Advanced Options")]
         [SerializeField] private bool captureLogMessages = true;
@@ -32,9 +33,19 @@ namespace LudicWorlds
         // Static references for external access
         private static DebugPanel _instance;
         private static Canvas _canvas;
-        private static Text _debugText;
-        private static Text _fpsText;
-        private static Text _statusText;
+        private static TextMeshProUGUI _debugText;
+        private static TextMeshProUGUI _fpsText;
+        private static TextMeshProUGUI _statusText;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStaticFields()
+        {
+            _instance = null;
+            _canvas = null;
+            _debugText = null;
+            _fpsText = null;
+            _statusText = null;
+        }
 
         // FPS calculation
         private float _elapsedTime;
@@ -45,11 +56,7 @@ namespace LudicWorlds
         // Message queue
         private Queue<string> _queuedMessages;
 
-        // Billboard functionality
-        private Transform _cameraTransform;
-        private Vector3 _dirToPlayer = Vector3.zero;
-
-        // Color coding for different log types
+        // Color coding for different log types (TMP rich text format)
         private readonly Dictionary<LogType, string> _logColors = new Dictionary<LogType, string>
         {
             { LogType.Log, "#FFFFFF" },
@@ -84,13 +91,10 @@ namespace LudicWorlds
 
         void Start()
         {
-            if (enableBillboard && Camera.main != null)
+            // Setup text auto-sizing if enabled
+            if (autoSizeText)
             {
-                _cameraTransform = Camera.main.transform;
-            }
-            else if (enableBillboard)
-            {
-                Debug.LogWarning("[DebugPanel] Billboard enabled but no main camera found!");
+                SetupTextAutoSizing();
             }
         }
 
@@ -114,7 +118,6 @@ namespace LudicWorlds
         void Update()
         {
             UpdateFPS();
-            UpdateBillboard();
             ProcessQueuedMessages();
         }
 
@@ -139,21 +142,21 @@ namespace LudicWorlds
                 {
                     Transform debugTransform = uiTransform.Find("DebugText");
                     if (debugTransform != null)
-                        debugText = debugTransform.GetComponent<Text>();
+                        debugText = debugTransform.GetComponent<TextMeshProUGUI>();
                 }
 
                 if (fpsText == null)
                 {
                     Transform fpsTransform = uiTransform.Find("FpsText");
                     if (fpsTransform != null)
-                        fpsText = fpsTransform.GetComponent<Text>();
+                        fpsText = fpsTransform.GetComponent<TextMeshProUGUI>();
                 }
 
                 if (statusText == null)
                 {
                     Transform statusTransform = uiTransform.Find("StatusText");
                     if (statusTransform != null)
-                        statusText = statusTransform.GetComponent<Text>();
+                        statusText = statusTransform.GetComponent<TextMeshProUGUI>();
                 }
             }
 
@@ -164,9 +167,9 @@ namespace LudicWorlds
             _statusText = statusText;
 
             // Validate components
-            if (debugText == null) Debug.LogWarning("[DebugPanel] Debug Text not assigned!");
-            if (fpsText == null) Debug.LogWarning("[DebugPanel] FPS Text not assigned!");
-            if (statusText == null) Debug.LogWarning("[DebugPanel] Status Text not assigned!");
+            if (debugText == null) Debug.LogWarning("[DebugPanel] Debug Text (TextMeshPro) not assigned!");
+            if (fpsText == null) Debug.LogWarning("[DebugPanel] FPS Text (TextMeshPro) not assigned!");
+            if (statusText == null) Debug.LogWarning("[DebugPanel] Status Text (TextMeshPro) not assigned!");
         }
 
         private void InitializeVariables()
@@ -178,7 +181,45 @@ namespace LudicWorlds
             _queuedMessages = new Queue<string>();
 
             if (fpsText != null)
+            {
                 fpsText.text = "0 FPS";
+
+                // Setup text sizing
+                if (autoSizeText)
+                {
+                    SetupTextComponent(fpsText);
+                }
+            }
+
+            if (autoSizeText)
+            {
+                if (debugText != null) SetupTextComponent(debugText);
+                if (statusText != null) SetupTextComponent(statusText);
+            }
+        }
+
+        private void SetupTextAutoSizing()
+        {
+            if (debugText != null) SetupTextComponent(debugText);
+            if (fpsText != null) SetupTextComponent(fpsText);
+            if (statusText != null) SetupTextComponent(statusText);
+        }
+
+        private void SetupTextComponent(TextMeshProUGUI textComponent)
+        {
+            if (textComponent == null) return;
+
+            // Enable auto-sizing
+            textComponent.enableAutoSizing = true;
+            textComponent.fontSizeMin = minFontSize;
+            textComponent.fontSizeMax = maxFontSize;
+
+            // Enable text wrapping and overflow protection
+            textComponent.enableWordWrapping = true;
+            textComponent.overflowMode = TextOverflowModes.Truncate;
+
+            // Set text fitting options
+            textComponent.textWrappingMode = TextWrappingModes.Normal;
         }
         #endregion
 
@@ -208,23 +249,6 @@ namespace LudicWorlds
                 _elapsedTime = 0f;
                 _sumFps = 0f;
                 _fpsSamples = 0;
-            }
-        }
-
-        private void UpdateBillboard()
-        {
-            if (!enableBillboard || _cameraTransform == null) return;
-
-            _dirToPlayer = (transform.position - _cameraTransform.position).normalized;
-
-            if (rotateYAxisOnly)
-            {
-                _dirToPlayer.y = 0; // Only rotate around Y-axis
-            }
-
-            if (_dirToPlayer != Vector3.zero)
-            {
-                transform.rotation = Quaternion.LookRotation(_dirToPlayer);
             }
         }
 
@@ -372,15 +396,15 @@ namespace LudicWorlds
             {
                 Transform debugTransform = uiTransform.Find("DebugText");
                 if (debugTransform != null && debugText == null)
-                    debugText = debugTransform.GetComponent<Text>();
+                    debugText = debugTransform.GetComponent<TextMeshProUGUI>();
 
                 Transform fpsTransform = uiTransform.Find("FpsText");
                 if (fpsTransform != null && fpsText == null)
-                    fpsText = fpsTransform.GetComponent<Text>();
+                    fpsText = fpsTransform.GetComponent<TextMeshProUGUI>();
 
                 Transform statusTransform = uiTransform.Find("StatusText");
                 if (statusTransform != null && statusText == null)
-                    statusText = statusTransform.GetComponent<Text>();
+                    statusText = statusTransform.GetComponent<TextMeshProUGUI>();
             }
 
             UnityEditor.EditorUtility.SetDirty(this);
@@ -391,6 +415,8 @@ namespace LudicWorlds
             // Clamp values to reasonable ranges
             maxLines = Mathf.Clamp(maxLines, 1, 100);
             fpsUpdateInterval = Mathf.Clamp(fpsUpdateInterval, 0.1f, 5f);
+            maxFontSize = Mathf.Clamp(maxFontSize, minFontSize, 72f);
+            minFontSize = Mathf.Clamp(minFontSize, 4f, maxFontSize);
         }
 #endif
         #endregion
