@@ -12,10 +12,9 @@ using realvirtual; // MU, Sensor
 /// Auto feed + cut sequencer (UNITS: mm, mm/s) with:
 /// - Boundary-gated Stop (no mid-step aborts)
 /// - Latched E-Stop (hard kill) requiring Reset
-/// - Safe re-feed after exit clear
-/// - Outfeed to pick with watchdogs
+/// - Safe re-feed after exit clear (optional)
+/// - Outfeed to pick; on pick position -> idle (S_HOLD)
 /// - Spawn level: LS_Blade_Down↑ .. PE_Cutter_Exit↓
-/// - Handshake to PickPlaceSequencer (PnP_Start/Busy/Done)
 public class AutoFeedSequencer : MonoBehaviour
 {
     // ===== Lifecycle (Inputs)
@@ -26,10 +25,10 @@ public class AutoFeedSequencer : MonoBehaviour
     // ===== Conveyor & eyes (Inputs)
     [Header("Conveyor & Eyes (Inputs)  [mm / mm/s]")]
     public FloatIn Conv_Infeed_Position_mm;
-    public BoolIn Conv_Infeed_IsDriving;       // optional
-    public BoolIn PE_Cutter_Entry;             // long sheet at entry
-    public BoolIn PE_Cutter_Exit;              // cut piece in throat
-    public BoolIn PE_Pick_Pos;                 // piece arrived at pick
+    public BoolIn Conv_Infeed_IsDriving; // optional
+    public BoolIn PE_Cutter_Entry;       // long sheet at entry
+    public BoolIn PE_Cutter_Exit;        // cut piece in throat
+    public BoolIn PE_Pick_Pos;           // piece arrived at pick
 
     // ===== Entry Sensor (runtime MU capture)
     [Header("Entry Sensor (runtime MU capture)")]
@@ -56,7 +55,7 @@ public class AutoFeedSequencer : MonoBehaviour
     public BoolOut Blade_JogDown; // down
     public BoolOut Blade_JogUp;   // up
 
-    // ===== Spawn output (PLC)
+    // ===== Cut piece spawn (PLC)
     [Header("Cut Piece Spawning (PLC Output)")]
     [Tooltip("Boolean to the Source that generates the cut piece. TRUE on BladeDown↑, FALSE when PE_Cutter_Exit↓.")]
     public BoolOut Source_CutPiece_Generate;
@@ -64,12 +63,9 @@ public class AutoFeedSequencer : MonoBehaviour
     [Tooltip("Gate spawn/visuals on a permitted stroke only.")]
     public bool RequireCutPermission = true;
 
-    // ===== Handshake with Pick&Place
-    [Header("PnP Handshake (PLC)")]
-    public BoolOut PnP_Start;   // pulse when piece reached pick
-    public BoolIn PnP_Busy;    // true while PnP runs
-    public BoolIn PnP_Done;    // rising-edge at end of a PnP cycle
-    bool _pnpPulseArmed = false; // drop PnP_Start next frame
+    [Header("Options")]
+    [Tooltip("If true, automatically meter the next cut after the throat clears. If false, remain idle after delivering to pick.")]
+    public bool AutoRefeed = true;
 
     // ===== Setpoints & watchdogs
     [Header("Setpoints (Units: mm & mm/s)")]
@@ -84,9 +80,9 @@ public class AutoFeedSequencer : MonoBehaviour
     public float WD_Feed_Scale = 1.5f;   // feed WD ~ (CutLength/Speed) * scale
     public float WD_CutDown_s = 5.0f;
     public float WD_CutUp_s = 5.0f;
-    public float WD_ExitClear_s = 3.0f;   // time to clear cutter throat
-    public float WD_ToPick_s = 5.0f;   // time from exit clear to reach pick
-    public float WD_Refeed_s = 5.0f;   // time from NextFeedArmed to next BladeDown (paused while Stop=1)
+    public float WD_ExitClear_s = 3.0f;  // time to clear cutter throat
+    public float WD_ToPick_s = 5.0f;     // time from exit clear to reach pick
+    public float WD_Refeed_s = 5.0f;     // time from NextFeedArmed to next BladeDown (paused while Stop=1)
 
     [Header("Policy")]
     public bool AllowRetractionOnGuardOpen = true;
@@ -129,6 +125,7 @@ public class AutoFeedSequencer : MonoBehaviour
         else
             Debug.LogWarning("[SEQ] EntrySensor not assigned; cannot capture runtime MU instance.");
     }
+
     void OnDestroy()
     {
         if (EntrySensor != null)
@@ -140,9 +137,6 @@ public class AutoFeedSequencer : MonoBehaviour
         // Inputs & speed
         SampleInputs();
         DeriveMeasuredSpeed();
-
-        // Drop PnP start pulse one frame later
-        if (_pnpPulseArmed) { _pnpPulseArmed = false; PnP_Start.Set(false); }
 
         // E-Stop latch: any drop kills immediately and latches until Reset
         if (!EStop_OK.v)
@@ -199,13 +193,19 @@ public class AutoFeedSequencer : MonoBehaviour
         }
     }
 
-    // ===== Runtime MU capture (no visual switch here)
+    // ===== Runtime MU capture (reset visuals ONLY when a NEW MU arrives)
     void OnEntrySensorEvent(MU mu, bool occupied)
     {
-        if (!occupied) return;
-        _currentMU = mu;
-        _appearanceIdx = 0;
-        if (VerboseLogs) Debug.Log($"[ENTRY] Captured MU '{(_currentMU ? _currentMU.name : "null")}', stage=0 (no visual change on sensor).");
+        if (!occupied || mu == null) return;
+
+        // Only react if this is a different MU than the currently tracked one
+        if (mu != _currentMU)
+        {
+            _currentMU = mu;
+            _appearanceIdx = 0;
+            ApplyAppearanceByIndex(0); // set 'before cut' variant
+            if (VerboseLogs) Debug.Log($"[ENTRY] Captured NEW MU '{_currentMU.name}', stage=0 (visual reset).");
+        }
     }
 
     // ===== States
@@ -213,8 +213,6 @@ public class AutoFeedSequencer : MonoBehaviour
     {
         StopAllMotion();
         Source_CutPiece_Generate.Set(false);
-        PnP_Start.Set(false);
-        _pnpPulseArmed = false;
 
         _appearanceIdx = 0;
         _currentMU = null;
@@ -266,6 +264,15 @@ public class AutoFeedSequencer : MonoBehaviour
         if (!runEnable) { Fault("EStop/Run lost during metering"); return; }
         if (!LC_Cutter_Guard_OK.v) { Fault("Guard opened during metering"); return; }
         if (!LS_Blade_Up.v) { Fault("Blade not up during metering"); return; }
+
+        // If material lost during metering, end cycle gracefully
+        if (!PE_Cutter_Entry.v)
+        {
+            Conv_Infeed_Fwd.Set(false);
+            Debug.LogWarning("[SEQ] Material lost during metering -> ending infeed cycle");
+            Enter(STATE.S_HOLD);
+            return;
+        }
 
         Conv_Infeed_TargetSpeed_mmps.Set(InfeedSpeed_mmps);
         Conv_Infeed_Fwd.Set(true);
@@ -333,64 +340,49 @@ public class AutoFeedSequencer : MonoBehaviour
 
     void Tick_S4_RELEASE_TO_PICK()
     {
-        // Outfeed runs until pick; independent from infeed/refeed
+        // Outfeed runs until pick
         Conv_Outfeed_TargetSpeed_mmps.Set(OutfeedSpeed_mmps);
         Conv_Outfeed_Fwd.Set(true);
 
-        // Exit clear ends spawn and arms next feed (if entry has material)
+        // Mark exit cleared on Falling edge
         if (!exitClearedThisCycle && PE_Cutter_Exit.Falling)
         {
             exitClearedThisCycle = true;
             Source_CutPiece_Generate.Set(false);
 
-            if (PE_Cutter_Entry.v)
+            // Arm next feed only if AutoRefeed is enabled and material present
+            if (AutoRefeed && PE_Cutter_Entry.v)
             {
                 NextFeedArmed = true;
-                refeedTimer_s = 0f; // start refeed watchdog (paused by Stop)
+                refeedTimer_s = 0f;
                 if (VerboseLogs) Debug.Log("[SEQ] Exit clear -> NextFeedArmed=TRUE");
             }
             else
             {
-                NextFeedArmed = false; // END infeed cycle when entry is empty
-                if (VerboseLogs) Debug.Log("[SEQ] Exit clear -> Entry empty, ending infeed cycle");
+                NextFeedArmed = false;
+                if (VerboseLogs) Debug.Log("[SEQ] Exit clear -> AutoRefeed disabled or no entry material");
             }
 
-            // Start pick timer after throat is clear
+            // Start pick watchdog after clear
             pickTimerActive = true;
             pickTimer_s = 0f;
         }
 
-        // If exit didn’t clear in time -> fault
-        if (!exitClearedThisCycle) Watchdog(WD_ExitClear_s, "Exit clear watchdog");
-
-        // Stop outfeed exactly once at pick position + fire PnP start pulse
+        // Stop outfeed at pick and go idle
         if (PE_Pick_Pos.Rising)
         {
             Conv_Outfeed_Fwd.Set(false);
-            pickTimerActive = false; // arrival reached; stop pick watchdog
-
-            // Fire PnP_Start pulse if PnP not already busy
-            if (!PnP_Busy.v)
-            {
-                PnP_Start.Set(true);
-                _pnpPulseArmed = true; // auto-drop next frame
-                if (VerboseLogs) Debug.Log("[SEQ] PnP_Start pulse sent (piece at pick)");
-            }
+            pickTimerActive = false; // arrival reached; stop watchdog
+            Enter(STATE.S_HOLD);
+            return;
         }
 
-        // If PnP is running, we hold refeed until PnP_Done
-        if (PnP_Busy.v) return;
-
-        // If PnP just finished, allow refeed (regular logic below will advance)
-        if (PnP_Done.Rising && VerboseLogs) Debug.Log("[SEQ] PnP_Done received");
-
-        // Refeed path: only if armed, safe, STOP=0
-        if (NextFeedArmed && runEnable && LC_Cutter_Guard_OK.v && LS_Blade_Up.v && !Cmd_Stop.v)
+        // If AutoRefeed is ON and STOP=0 and interlocks OK, start next feed automatically
+        if (AutoRefeed && NextFeedArmed && runEnable && LC_Cutter_Guard_OK.v && LS_Blade_Up.v && !Cmd_Stop.v)
         {
             if (!PE_Cutter_Entry.v)
             {
-                // Sheet ran out after arming; end infeed cycle.
-                NextFeedArmed = false;
+                NextFeedArmed = false; // sheet ran out
             }
             else
             {
@@ -398,18 +390,39 @@ public class AutoFeedSequencer : MonoBehaviour
                 float v = Mathf.Max(1f, measuredSpeed_mmps);
                 feedWD_s = Mathf.Max(0.2f, (CutLength_mm / v) * WD_Feed_Scale);
 
-                // Consume the arm ONLY when we actually start the next meter
                 NextFeedArmed = false;
-                refeedTimer_s = 0f; // clean slate for next cycle
+                refeedTimer_s = 0f;
 
                 Enter(STATE.S1_METER_FEED);
                 return;
             }
         }
-        // If STOP=1, we simply hold in this state; outfeed continues until pick.
+
+        // If exit never cleared since S4 entry, watch it
+        if (!exitClearedThisCycle) Watchdog(WD_ExitClear_s, "Exit clear watchdog");
     }
 
-    void Tick_S_HOLD() { StopAllMotion(); }
+    void Tick_S_HOLD()
+    {
+        StopAllMotion();
+        // Idle until Start or Reset (your choice). Here we require Start again:
+        if (runEnable && LS_Blade_Up.v && Cmd_Start.Rising)
+        {
+            // If material already at entry, go straight into S1; else approach
+            if (PE_Cutter_Entry.v)
+            {
+                posAtEntry_mm = Conv_Infeed_Position_mm.v;
+                float v = Mathf.Max(1f, measuredSpeed_mmps);
+                feedWD_s = Mathf.Max(0.2f, (CutLength_mm / v) * WD_Feed_Scale);
+                Enter(STATE.S1_METER_FEED);
+            }
+            else
+            {
+                Enter(STATE.S0_APPROACH);
+            }
+        }
+    }
+
     void Tick_S_FAULT() { StopAllMotion(); Source_CutPiece_Generate.Set(false); }
 
     // ===== Helpers
@@ -420,7 +433,10 @@ public class AutoFeedSequencer : MonoBehaviour
         stateTimer = 0f; settleTimer = 0f;
 
         if (s == STATE.S1_METER_FEED)
+        {
             feedInterlockLatched = (!EStopLatched) && EStop_OK.v && LC_Cutter_Guard_OK.v && LS_Blade_Up.v;
+            Debug.Log($"[SEQ] S1 start: pos={Conv_Infeed_Position_mm.v:F1}mm; Cut={CutLength_mm:F1}mm; v={measuredSpeed_mmps:F1}mm/s; WD_feed={feedWD_s:0.00}s");
+        }
 
         if (s == STATE.S_RESET || s == STATE.S_FAULT)
         {
@@ -435,15 +451,15 @@ public class AutoFeedSequencer : MonoBehaviour
 
         if (s == STATE.S4_RELEASE_TO_PICK)
         {
-            // starting release phase
-            exitClearedThisCycle = false;
-            pickTimerActive = false; // starts only when exit clears
+            // Treat "already clear" exit as cleared to avoid false WD faults
+            exitClearedThisCycle = !PE_Cutter_Exit.v;
+            // Start pick watchdog immediately if already clear; else wait for Falling edge
+            pickTimerActive = exitClearedThisCycle;
             pickTimer_s = 0f;
         }
 
-        Debug.Log($"[SEQ] STATE: {_prevState} -> {State} @ {Time.time:0.000}s (Stop={Cmd_Stop.v}, EStopLatched={EStopLatched}, FeedLatched={feedInterlockLatched}, StrokeLatched={cutPermissionLatched}, NextFeedArmed={NextFeedArmed})");
-        if (s == STATE.S1_METER_FEED)
-            Debug.Log($"[SEQ] Entry snapshot pos={Conv_Infeed_Position_mm.v:F1}mm; Cut={CutLength_mm:F1}mm; v={measuredSpeed_mmps:F1}mm/s");
+        if (VerboseLogs)
+            Debug.Log($"[SEQ] STATE: {_prevState} -> {State} @ {Time.time:0.000}s (Stop={Cmd_Stop.v}, EStopLatched={EStopLatched}, FeedLatched={feedInterlockLatched}, StrokeLatched={cutPermissionLatched}, NextFeedArmed={NextFeedArmed})");
     }
 
     void StopAllMotion()
@@ -479,10 +495,6 @@ public class AutoFeedSequencer : MonoBehaviour
         LC_Cutter_Guard_OK.Sample();
         LS_Blade_Up.Sample();
         LS_Blade_Down.Sample();
-
-        // PnP handshake
-        PnP_Busy.Sample();
-        PnP_Done.Sample();
     }
 
     void SensorEdgeLogs()
@@ -559,8 +571,8 @@ public class AutoFeedSequencer : MonoBehaviour
             $"[TICK {Time.time:0.000}] State={State} | " +
             $"Stop={Cmd_Stop.v} EStopLatched={EStopLatched} FeedLatched={feedInterlockLatched} StrokeLatched={cutPermissionLatched} NextFeedArmed={NextFeedArmed} | " +
             $"PEin={PE_Cutter_Entry.v} PEx={PE_Cutter_Exit.v} Pick={PE_Pick_Pos.v} Up={LS_Blade_Up.v} Down={LS_Blade_Down.v} Guard={LC_Cutter_Guard_OK.v} | " +
-            $"pos={Conv_Infeed_Position_mm.v:F1}mm Δ={delta_mm:F1}mm (L={CutLength_mm:F1}mm) v={measuredSpeed_mmps:F1}mm/s | " +
-            $"Gen={Source_CutPiece_Generate.Get()} PnP(Busy={PnP_Busy.v}) | " +
+            $"pos={Conv_Infeed_Position_mm.v:F1}mm Δ={delta_mm:F1}mm (L={CutLength_mm:F1}mm) v={measuredSpeed_mmps:F1}mm/s WD_feed={feedWD_s:0.00}s | " +
+            $"Gen={Source_CutPiece_Generate.Get()} | " +
             $"refeedT={refeedTimer_s:0.00}s pickT={(pickTimerActive ? pickTimer_s : 0f):0.00}s";
         Debug.Log(line);
     }
