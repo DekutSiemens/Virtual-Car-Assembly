@@ -1,42 +1,32 @@
 ﻿using UnityEngine;
 using System;
-using System.Reflection;   // for optional Override mirroring
-using realvirtual;
+using System.Reflection;
+using VME.IO;   // wrappers (BoolIn/BoolOut/FloatIn/FloatOut)
 
-/// Industrial pick & place controller for 4 links (X/Y/Z/R) that drives
-/// Drive_DestinationMotor-style IO (DestinationIndex, TargetSpeed, StartDrive,
-/// IsAtPosition, IsDriving, PositionIndex).
-///
-/// Fixes vs previous version:
-/// 1) One Start pulse is enough: RESET → EXEC immediately (no second pulse).
-/// 2) Output writes are reliable:
-///    - Writes to normal Value (tag.Value)
-///    - Optional: also forces tag.Override=true and sets tag.ValueOverride
-///      so you can SEE changes in the inspector and satisfy behaviours that
-///      use the Override path.
-///
-/// Extras:
-/// - Min start-pulse width
-/// - Boundary-gated Stop between steps
-/// - Optional vacuum on/off steps
-/// - Robust logs with the *actual* values we write
 public class PickPlaceSequencer : MonoBehaviour
 {
     // ---------------- Lifecycle ----------------
     [Header("Lifecycle (Inputs)")]
-    public BoolIn Cmd_Start;       // Rising edge starts a cycle
-    public BoolIn Cmd_Stop;        // Boundary-gated hold between steps
-    public BoolIn Cmd_Reset;       // Rising clears faults / E-Stop latch
-    public BoolIn EStop_OK;        // Level; any drop latches E-Stop
+    public BoolIn Cmd_Start;       // may stay HIGH continuously
+    public BoolIn Cmd_Stop;
+    public BoolIn Cmd_Reset;
+    public BoolIn EStop_OK;
 
     [Header("Controller Status (Outputs, optional)")]
-    public BoolOut PnP_Busy;       // level TRUE during an active cycle
-    public BoolOut PnP_Done;       // one-frame pulse at the end of a cycle
+    public BoolOut PnP_Busy;
+    public BoolOut PnP_Done;
 
-    // ---------------- Vacuum (optional) ----------------
-    [Header("Gripper (optional)")]
-    public BoolOut Vacuum_On;
-    public BoolIn Vacuum_OK;
+    // ---------------- Start gating ----------------
+    [Header("Start gating (sheet present)")]
+    [Tooltip("Presence sensor that is TRUE when the cut sheet is parked at the pick position.")]
+    public BoolIn SheetAtPick;
+    [Tooltip("If true, a new cycle only starts when Cmd_Start is HIGH AND SheetAtPick is HIGH.")]
+    public bool GateStartBySheetSensor = true;
+
+    // ---------------- Grip (optional single-bit pick/place) ----------------
+    [Header("Grip (optional)")]
+    public BoolOut Grip_Pick;   // single bit; we just set/reset (no pulse timing)
+    public BoolOut Grip_Place;
 
     // ---------------- Link IO Bundles ------------------
     public enum Link { X = 0, Y = 1, Z = 2, R = 3 }
@@ -45,14 +35,14 @@ public class PickPlaceSequencer : MonoBehaviour
     public class LinkIO
     {
         [Header("Outputs")]
-        public FloatOut DestinationIndex;   // integer index for destination motor
-        public FloatOut TargetSpeed_mmps;   // linear mm/s or deg/s for rotary
-        public BoolOut StartDrive;         // pulse TRUE for >= MinStartPulse_s
+        public FloatOut DestinationIndex;
+        public FloatOut TargetSpeed_mmps;
+        public BoolOut StartDrive;
 
         [Header("Inputs")]
         public BoolIn IsAtPosition;
         public BoolIn IsDriving;
-        public FloatIn PositionIndex;       // for logs / diagnostics
+        public FloatIn PositionIndex;
     }
 
     [Header("Links (assign ALL 4)")]
@@ -60,29 +50,23 @@ public class PickPlaceSequencer : MonoBehaviour
 
     // ---------------- Program --------------------------
     public enum WaitPolicy { WaitAtPosition, DwellOnly }
-    public enum VacAction { None, OnBeforeMove, OffAfterDwell }
+    public enum GripAction { Off, PickBeforeDwell, PlaceAfterDwell }
 
     [Serializable]
     public class Step
     {
         [Header("Move")]
         public Link Link;
-        [Tooltip("Destination index expected by Drive_DestinationMotor")]
         public float DestinationIndex = 0;
-        [Tooltip("Target speed (mm/s; use deg/s for rotary R)")]
         public float TargetSpeed_mmps = 400f;
 
         [Header("Completion & Timing")]
         public WaitPolicy Wait = WaitPolicy.WaitAtPosition;
-        [Tooltip("Post-move dwell (sec)")]
         public float Dwell_s = 0f;
-        [Tooltip("Move watchdog (sec)")]
         public float WD_Move_s = 3.0f;
 
-        [Header("Vacuum (optional)")]
-        public VacAction Vacuum = VacAction.None;
-        [Tooltip("If Vacuum action used, confirm window (sec) for Vacuum_OK")]
-        public float WD_Vacuum_s = 0.5f;
+        [Header("Grip action")]
+        public GripAction Grip = GripAction.Off;
     }
 
     [Header("Program (runs top → bottom)")]
@@ -90,19 +74,9 @@ public class PickPlaceSequencer : MonoBehaviour
 
     // ---------------- Behaviour Options ----------------
     [Header("Controller Options")]
-    [Tooltip("One Start pulse also starts the program (no second pulse in IDLE).")]
-    public bool StartImmediately = true;
-
-    [Tooltip("Minimum StartDrive pulse width (sec).")]
     public float MinStartPulse_s = 0.10f;
-
-    [Tooltip("Extra settle after IsAtPosition before entering dwell (sec).")]
     public float SettleAfterAtPos_s = 0.05f;
-
-    [Tooltip("Also write to Override/ValueOverride so inspector updates and behaviours that read Override see your commands.")]
     public bool MirrorWritesToOverride = true;
-
-    [Tooltip("If true, controller ignores IO writes (useful for dry-run debugging).")]
     public bool DryRun = false;
 
     // ---------------- Debug ----------------------------
@@ -124,7 +98,7 @@ public class PickPlaceSequencer : MonoBehaviour
     float settleTimer;
     float pulseHoldUntil;
 
-    // cached for the current step
+    // cached for current step
     Step cur;
     LinkIO cio;
 
@@ -140,7 +114,7 @@ public class PickPlaceSequencer : MonoBehaviour
     {
         SampleInputs();
 
-        // Hard E-Stop latch
+        // E-Stop latch
         if (!EStop_OK.v)
         {
             if (!eStopLatched && VerboseLogs) Debug.LogWarning("[PnP] E-STOP drop -> latched");
@@ -192,46 +166,35 @@ public class PickPlaceSequencer : MonoBehaviour
 
         if (!runEnable) return;
 
-        // Fix #1: a single Start pulse is enough to begin immediately
-        if (Cmd_Start.Rising)
+        // Level-gated start:
+        bool canStart = GateStartBySheetSensor ? (Cmd_Start.v && SheetAtPick.v) : Cmd_Start.Rising;
+        if (canStart)
         {
-            if (Steps == null || Steps.Length == 0) { Fault("No steps configured"); return; }
-            if (PnP_Busy?.tag) PnP_Busy.Set(true);
-            Enter(STATE.EXEC_PREP);
+            BeginProgram();
         }
+    }
+
+    void BeginProgram()
+    {
+        if (Steps == null || Steps.Length == 0) { Fault("No steps configured"); return; }
+        if (PnP_Busy?.tag) PnP_Busy.Set(true);
+        Enter(STATE.EXEC_PREP);
     }
 
     void Tick_EXEC_PREP()
     {
         if (!runEnable) { Fault("Run lost"); return; }
+        if (Cmd_Stop.v) return; // boundary-gated stop
 
-        // Boundary-gated Stop: don't launch a new move while Stop=1
-        if (Cmd_Stop.v) return;
-
-        if (stepIdx >= (Steps?.Length ?? 0))
-        {
-            Enter(STATE.DONE);
-            return;
-        }
+        if (stepIdx >= (Steps?.Length ?? 0)) { Enter(STATE.DONE); return; }
 
         cur = Steps[stepIdx];
         cio = GetLinkIO(cur.Link);
         if (cio == null) { Fault($"Link IO missing for {cur.Link}"); return; }
 
-        // Optional vacuum on before the move
-        if (cur.Vacuum == VacAction.OnBeforeMove)
-        {
-            TrySetBoolOutput(Vacuum_On, true);
-            if (Vacuum_OK.tag && cur.WD_Vacuum_s > 0f)
-            {
-                stateTimer += Time.fixedDeltaTime;
-                if (!Vacuum_OK.v && stateTimer < cur.WD_Vacuum_s) return;
-                if (!Vacuum_OK.v && stateTimer >= cur.WD_Vacuum_s) { Fault("Vacuum OK timeout before move"); return; }
-                stateTimer = 0f;
-            }
-        }
+        // NOTE: Do NOT set Grip here. We only set Pick at DWELL ENTRY.
 
-        // Command the selected link: speed → destination → start pulse
+        // Command move
         TrySetFloatOutput(cio.TargetSpeed_mmps, cur.TargetSpeed_mmps);
         TrySetFloatOutput(cio.DestinationIndex, cur.DestinationIndex);
         PulseStartOnly(cio.StartDrive);
@@ -241,11 +204,23 @@ public class PickPlaceSequencer : MonoBehaviour
         settleTimer = 0f;
 
         if (VerboseLogs)
-        {
-            Debug.Log($"[PnP] Step {stepIdx + 1}/{Steps.Length}: {cur.Link} -> Dest={cur.DestinationIndex}, v={cur.TargetSpeed_mmps} (Wait={cur.Wait}, Dwell={cur.Dwell_s})");
-        }
+            Debug.Log($"[PnP] Step {stepIdx + 1}/{Steps.Length}: {cur.Link} -> Dest={cur.DestinationIndex}, v={cur.TargetSpeed_mmps} (Wait={cur.Wait}, Dwell={cur.Dwell_s}, Grip={cur.Grip})");
 
         Enter(STATE.EXEC_RUN);
+    }
+
+    // Helper to enter dwell and perform "PickBeforeDwell" exactly on dwell entry
+    void EnterDwell()
+    {
+        // Assert PICK exactly when we enter DWELL (post-position/settle)
+        if (cur.Grip == GripAction.PickBeforeDwell)
+        {
+            TrySetBoolOutput(Grip_Place, false);
+            TrySetBoolOutput(Grip_Pick, true);
+            if (VerboseLogs) Debug.Log("[PnP] Grip_Pick=TRUE at DWELL entry.");
+        }
+
+        Enter(STATE.DWELL);
     }
 
     void Tick_EXEC_RUN()
@@ -254,32 +229,27 @@ public class PickPlaceSequencer : MonoBehaviour
 
         stateTimer += Time.fixedDeltaTime;
 
-        bool atPos = cio.IsAtPosition.v;
-
         if (cur.Wait == WaitPolicy.WaitAtPosition)
         {
-            if (atPos)
+            if (cio.IsAtPosition.v)
             {
                 settleTimer += Time.fixedDeltaTime;
                 if (settleTimer >= Mathf.Max(0, SettleAfterAtPos_s))
                 {
-                    Enter(STATE.DWELL);
+                    EnterDwell(); // <-- pick at dwell entry
                     return;
                 }
             }
         }
         else
         {
-            // DwellOnly policy: go straight to dwell
-            Enter(STATE.DWELL);
+            EnterDwell(); // DwellOnly still asserts pick at dwell entry
             return;
         }
 
         // Watchdog
         if (stateTimer > Mathf.Max(0.05f, cur.WD_Move_s))
-        {
-            Fault($"Move WD: {cur.Link} Dest={cur.DestinationIndex}  atPos={cio.IsAtPosition.v} drv={cio.IsDriving.v}");
-        }
+            Fault($"Move WD: {cur.Link} Dest={cur.DestinationIndex} atPos={cio.IsAtPosition.v} drv={cio.IsDriving.v}");
     }
 
     void Tick_DWELL()
@@ -290,19 +260,14 @@ public class PickPlaceSequencer : MonoBehaviour
 
         if (stateTimer >= Mathf.Max(0, cur.Dwell_s))
         {
-            // Optional: vacuum off AFTER dwell, with confirm
-            if (cur.Vacuum == VacAction.OffAfterDwell)
+            // Grip action AFTER dwell (place)
+            if (cur.Grip == GripAction.PlaceAfterDwell)
             {
-                TrySetBoolOutput(Vacuum_On, false);
-                if (Vacuum_OK.tag && cur.WD_Vacuum_s > 0f)
-                {
-                    float rel = stateTimer - cur.Dwell_s;
-                    if (Vacuum_OK.v && rel < cur.WD_Vacuum_s) return;
-                    if (Vacuum_OK.v && rel >= cur.WD_Vacuum_s) { Fault("Vacuum release timeout"); return; }
-                }
+                TrySetBoolOutput(Grip_Pick, false);
+                TrySetBoolOutput(Grip_Place, true);
+                if (VerboseLogs) Debug.Log("[PnP] Grip_Place=TRUE after dwell.");
             }
 
-            // next step
             stepIdx++;
             Enter(STATE.EXEC_PREP);
         }
@@ -319,7 +284,7 @@ public class PickPlaceSequencer : MonoBehaviour
             else PnP_Done.Set(false);
         }
 
-        // Go back to RESET and wait for the next Start
+        // Back to RESET; RESET will auto-restart if Cmd_Start && SheetAtPick are HIGH.
         Enter(STATE.RESET);
     }
 
@@ -332,7 +297,6 @@ public class PickPlaceSequencer : MonoBehaviour
     // ===================================================
     // Helpers
     // ===================================================
-
     LinkIO GetLinkIO(Link link)
     {
         switch (link)
@@ -347,7 +311,6 @@ public class PickPlaceSequencer : MonoBehaviour
 
     void PulseStartOnly(BoolOut startOut)
     {
-        // force all LOW, then raise the selected one for MinStartPulse_s
         ForceAllStartFalse();
         if (startOut?.tag == null) return;
 
@@ -377,7 +340,8 @@ public class PickPlaceSequencer : MonoBehaviour
     void SafeOutputs()
     {
         ForceAllStartFalse();
-        TrySetBoolOutput(Vacuum_On, false);
+        TrySetBoolOutput(Grip_Pick, false);
+        TrySetBoolOutput(Grip_Place, false);
     }
 
     void Enter(STATE s)
@@ -397,8 +361,7 @@ public class PickPlaceSequencer : MonoBehaviour
     void SampleInputs()
     {
         Cmd_Start.Sample(); Cmd_Stop.Sample(); Cmd_Reset.Sample(); EStop_OK.Sample();
-
-        Vacuum_OK.Sample();
+        SheetAtPick.Sample();
 
         LinkX.IsAtPosition.Sample(); LinkX.IsDriving.Sample(); LinkX.PositionIndex.Sample();
         LinkY.IsAtPosition.Sample(); LinkY.IsDriving.Sample(); LinkY.PositionIndex.Sample();
@@ -409,71 +372,51 @@ public class PickPlaceSequencer : MonoBehaviour
     void LogTick()
     {
         string curDesc = (Steps != null && stepIdx < Steps.Length)
-            ? $"{Steps[stepIdx].Link}@{Steps[stepIdx].DestinationIndex} v={Steps[stepIdx].TargetSpeed_mmps}"
+            ? $"{Steps[stepIdx].Link}@{Steps[stepIdx].DestinationIndex} v={Steps[stepIdx].TargetSpeed_mmps} (Grip={Steps[stepIdx].Grip})"
             : "-";
 
         Debug.Log(
             $"[PnP {Time.time:0.000}] State={State} Busy={(PnP_Busy?.Get() ?? false)} Stop={Cmd_Stop.v} " +
             $"EStopLatched={eStopLatched} step={stepIdx}/{(Steps != null ? Steps.Length : 0)} cur={curDesc} | " +
-            $"X(p={LinkX.PositionIndex.v:0} at={LinkX.IsAtPosition.v} drv={LinkX.IsDriving.v}) " +
-            $"Y(p={LinkY.PositionIndex.v:0} at={LinkY.IsAtPosition.v} drv={LinkY.IsDriving.v}) " +
-            $"Z(p={LinkZ.PositionIndex.v:0} at={LinkZ.IsAtPosition.v} drv={LinkZ.IsDriving.v}) " +
-            $"R(p={LinkR.PositionIndex.v:0} at={LinkR.IsAtPosition.v} drv={LinkR.IsDriving.v}) " +
-            $"VacOn={(Vacuum_On?.Get() ?? false)} VacOK={Vacuum_OK.v}"
+            $"X(pos={LinkX.PositionIndex.v:0} at={LinkX.IsAtPosition.v} drv={LinkX.IsDriving.v}) " +
+            $"Y(pos={LinkY.PositionIndex.v:0} at={LinkY.IsAtPosition.v} drv={LinkY.IsDriving.v}) " +
+            $"Z(pos={LinkZ.PositionIndex.v:0} at={LinkZ.IsAtPosition.v} drv={LinkZ.IsDriving.v}) " +
+            $"R(pos={LinkR.PositionIndex.v:0} at={LinkR.IsAtPosition.v} drv={LinkR.IsDriving.v}) " +
+            $"SheetAtPick={SheetAtPick.v} " +
+            $"Grip(Pick={(Grip_Pick?.Get() ?? false)}, Place={(Grip_Place?.Get() ?? false)})"
         );
     }
 
     // ===================================================
     // Output writing (with optional Override mirroring)
     // ===================================================
-
     void TrySetFloatOutput(FloatOut outTag, float value)
     {
-        if (outTag?.tag == null) return;
-        if (DryRun) return;
-
-        // normal path
+        if (outTag?.tag == null || DryRun) return;
         outTag.Set(value);
-
-        // mirror to Override + ValueOverride if present and enabled
-        if (MirrorWritesToOverride)
-        {
-            TrySetOverride(outTag.tag, value);
-        }
+        if (MirrorWritesToOverride) TrySetOverride(outTag.tag, value);
     }
 
     void TrySetBoolOutput(BoolOut outTag, bool value)
     {
-        if (outTag?.tag == null) return;
-        if (DryRun) return;
-
+        if (outTag?.tag == null || DryRun) return;
         outTag.Set(value);
-
-        if (MirrorWritesToOverride)
-        {
-            TrySetOverride(outTag.tag, value ? 1f : 0f);
-        }
+        if (MirrorWritesToOverride) TrySetOverride(outTag.tag, value ? 1f : 0f);
     }
 
-    // reflection-based, so it works with the free package fields without us
-    // taking a dependency on their exact member names
     static void TrySetOverride(object plcOutput, float numeric)
     {
         if (plcOutput == null) return;
-
         var t = plcOutput.GetType();
 
-        // bool Override
         var fOverride = t.GetField("Override", BindingFlags.Public | BindingFlags.Instance);
         var pOverride = t.GetProperty("Override", BindingFlags.Public | BindingFlags.Instance);
         if (fOverride != null) fOverride.SetValue(plcOutput, true);
         if (pOverride != null && pOverride.CanWrite) pOverride.SetValue(plcOutput, true);
 
-        // float ValueOverride
         var fVO = t.GetField("ValueOverride", BindingFlags.Public | BindingFlags.Instance);
         var pVO = t.GetProperty("ValueOverride", BindingFlags.Public | BindingFlags.Instance);
         if (fVO != null) fVO.SetValue(plcOutput, numeric);
         if (pVO != null && pVO.CanWrite) pVO.SetValue(plcOutput, numeric);
     }
 }
-
