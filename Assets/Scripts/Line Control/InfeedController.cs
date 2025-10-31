@@ -3,10 +3,10 @@ using realvirtual;
 using VME.IO;
 
 /// InfeedConveyor — EXIT-sensor–driven indexing + gated timed spawning
-/// AUTO: While Cmd_Start=1, feed until PE_Exit=HIGH (via Rising edge), stop; re-arm on PE_Exit=LOW.
+/// AUTO: While Cmd_Start=1, feed until PE_Exit=HIGH (via Rising edge), stop; re-arm on PE_Exit=LOW (after delay).
 /// MANUAL: Each Cmd_Start press feeds once to PE_Exit Rising.
 /// Entry sensor is only for initial approach/settle; not used to stop or index length.
-[DefaultExecutionOrder(-10)] // run early to stabilize outputs before other late systems
+[DefaultExecutionOrder(-10)]
 public class InfeedConveyor : MonoBehaviour
 {
     [Header("Shared Control Signals")]
@@ -38,6 +38,10 @@ public class InfeedConveyor : MonoBehaviour
     [Tooltip("Max time allowed to reach EXIT=HIGH during FEED_TO_EXIT.")]
     public float WD_ToExit_s = 5.0f;
 
+    [Header("Re-arm (Exit LOW → next cycle)")]
+    [Tooltip("Delay after EXIT becomes LOW before the next feed is allowed.")]
+    public float ReArmDelaySec = 0.30f;
+
     [Header("Timed Spawning (while belt commanded forward)")]
     [Tooltip("Source to spawn from. Ensure its AutomaticGeneration=false and Interval=0.")]
     public Source SpawnSource;
@@ -57,10 +61,12 @@ public class InfeedConveyor : MonoBehaviour
 
     // ===== Internals =====
     private bool _eStopLatched;
-    private bool _armed;       // true => allowed to accept next feed (requires EXIT Falling first)
+    private bool _armed;       // allowed to accept next feed
+    private bool _rearmPending;
+    private float _rearmAt;    // time when arming becomes allowed (Exit LOW + delay)
     private float _enteredAt;
 
-    // Commanded forward latch (what THIS controller is asking the drive to do)
+    // Commanded forward latch
     private bool _cmdFwd;
 
     // Timed spawning internals
@@ -71,7 +77,7 @@ public class InfeedConveyor : MonoBehaviour
 
     void Start()
     {
-        if (SpawnSource != null) SpawnSource.CancelInvoke(); // ensure single cadence
+        if (SpawnSource != null) SpawnSource.CancelInvoke();
         Enter(S.RESET);
     }
 
@@ -96,8 +102,17 @@ public class InfeedConveyor : MonoBehaviour
 
         bool runEnable = !_eStopLatched && EStop_OK.v;
 
-        // Global re-arming: whenever EXIT falls (piece cleared), allow next feed
-        if (PE_Exit.Falling) _armed = true;
+        // --- Exit-edge rearm with delay ---
+        if (PE_Exit.Falling)
+        {
+            _rearmPending = true;
+            _rearmAt = Now + Mathf.Max(0f, ReArmDelaySec);
+        }
+        if (_rearmPending && Now >= _rearmAt)
+        {
+            _armed = true;
+            _rearmPending = false;
+        }
 
         // STOP boundary behavior
         if (Cmd_Stop.v && _s != S.FAULT)
@@ -106,7 +121,7 @@ public class InfeedConveyor : MonoBehaviour
             {
                 CommandStop();
                 Enter(S.HOLD);
-                // Do not 'return'; spawning gate still evaluates at the end
+                // no return; spawning gate still evaluates below
             }
         }
 
@@ -115,7 +130,19 @@ public class InfeedConveyor : MonoBehaviour
             case S.RESET:
                 {
                     CommandStop();
-                    _armed = !PE_Exit.v; // armed at boot if exit is LOW
+                    // If EXIT is already LOW at reset, consider whether to delay or arm immediately:
+                    // Use the same delay logic for consistency.
+                    if (!PE_Exit.v)
+                    {
+                        _rearmPending = true;
+                        _rearmAt = Now + Mathf.Max(0f, ReArmDelaySec);
+                        _armed = false;
+                    }
+                    else
+                    {
+                        _rearmPending = false;
+                        _armed = false;
+                    }
                     if (runEnable) Enter(S.IDLE);
                     break;
                 }
@@ -135,7 +162,7 @@ public class InfeedConveyor : MonoBehaviour
                         break;
                     }
 
-                    // AUTO: require Start level + armed (EXIT must have gone LOW)
+                    // AUTO: require Start level + armed
                     if (Mode_Auto.v && Cmd_Start.v && _armed)
                     {
                         if (PE_Entry.v) Enter(S.WAIT_AT_ENTRY);
@@ -176,7 +203,10 @@ public class InfeedConveyor : MonoBehaviour
                 {
                     if (!runEnable) { Fault("Run lost during FEED_TO_EXIT"); break; }
 
-                    // Feed until EXIT *rising*; armed was cleared on state entry
+                    // consume armed at the start of the feed
+                    _armed = false;
+                    _rearmPending = false;
+
                     CommandRun(SpeedMMps);
 
                     // Primary stop: EXIT rising => sheet positioned
@@ -207,7 +237,7 @@ public class InfeedConveyor : MonoBehaviour
                     {
                         if (Mode_Auto.v)
                         {
-                            if (Cmd_Start.v) Enter(S.IDLE); // armed is checked in IDLE
+                            if (Cmd_Start.v) Enter(S.IDLE); // armed checked in IDLE
                         }
                         else
                         {
@@ -220,26 +250,24 @@ public class InfeedConveyor : MonoBehaviour
             case S.FAULT:
                 {
                     CommandStop();
-                    // Exit via Reset (handled above)
+                    // Leave via Reset
                     break;
                 }
         }
 
-        // ---- Timed Spawning Gate (runs regardless of state machine) ----
-        // Rule: spawn only while THIS controller is commanding forward (AUTO or MANUAL).
+        // ---- Timed Spawning Gate ----
         bool forwardCommanded = _cmdFwd;
         bool spawnPermitted = forwardCommanded && (!SpawnRequireEStopOK || (EStop_OK.v && !_eStopLatched)) && !Cmd_Stop.v;
 
         if (!spawnPermitted)
         {
-            StopSpawning();    // halts immediately; no backlog
+            StopSpawning();
             _spawnDelayT = 0f;
         }
         else
         {
             if (!_spawnTicking)
             {
-                // optional start delay (belt ramp, mechanical settle)
                 _spawnDelayT += Time.fixedDeltaTime;
                 if (_spawnDelayT >= SpawnStartDelay_s) StartSpawning();
             }
@@ -266,12 +294,9 @@ public class InfeedConveyor : MonoBehaviour
     void StartSpawning()
     {
         if (SpawnSource == null || _spawnTicking) return;
-
-        // Make sure internal Source timers are dead so we are the single cadence
         SpawnSource.CancelInvoke();
         CancelInvoke(nameof(SpawnTick));
         InvokeRepeating(nameof(SpawnTick), 0f, Mathf.Max(0.01f, SpawnPeriod_s));
-
         _spawnTicking = true;
         if (VerboseLogs) Debug.Log("[Infeed] Spawning START");
     }
@@ -286,7 +311,7 @@ public class InfeedConveyor : MonoBehaviour
     void SpawnTick()
     {
         if (SpawnSource != null)
-            SpawnSource.Generate(); // direct call: lowest-latency path
+            SpawnSource.Generate();
     }
 
     // ===== State Helpers =====
@@ -295,10 +320,6 @@ public class InfeedConveyor : MonoBehaviour
         _prev = _s;
         _s = s;
         _enteredAt = Now;
-
-        // consume armed only when we *start* feeding toward EXIT
-        if (s == S.FEED_TO_EXIT) _armed = false;
-
         if (VerboseLogs) Debug.Log($"[Infeed] {_prev} → {_s} @ {Now:0.000}s (Exit={PE_Exit.v})");
     }
 

@@ -1,12 +1,13 @@
 ﻿using UnityEngine;
 using VME.IO; // BoolIn/BoolOut
 
-/// CutterController — exit-edge triggered, one stroke per EXIT rising.
-/// - AUTO: fires once per PE_Exit.Rising when armed, GuardOK, BladeUp, Cmd_Start are valid.
-/// - MANUAL: fires once per Cmd_Start.Rising (ignores exit), still respects GuardOK & BladeUp.
-/// - Re-arm only on PE_Exit.Falling (or if EXIT is LOW at reset).
-/// - No spawning, no infeed control, no entry sensor dependency.
-///
+/// CutterController — exit-edge aware, one stroke per properly positioned piece.
+/// - AUTO: requires Cmd_Start=1, GuardOK, BladeUp, and PE_Exit HIGH *for PreCutDelaySec*
+///         (triggered by PE_Exit.Rising; waits the delay before CUT_DOWN).
+/// - MANUAL: Cmd_Start.Rising arms a pending stroke, which will only start once
+///           PE_Exit is HIGH *for PreCutDelaySec* (still requires GuardOK & BladeUp).
+/// - Re-arm only on PE_Exit.Falling (or EXIT LOW at reset).
+/// - No spawning, no infeed control.
 /// Shared signals policy:
 ///   - Mode_Auto: single bit (true=AUTO, false=MANUAL)
 ///   - Cmd_Start / Cmd_Stop / Cmd_Reset / EStop_OK: same BoolIn tags used across all controllers
@@ -35,10 +36,24 @@ public class CutterController : MonoBehaviour
     public BoolOut Blade_JogDown;
     public BoolOut Blade_JogUp;
 
-    // ===== Optional HMI (outputs)
-    [Header("Optional HMI (Outputs)")]
-    public BoolOut CutterBusy;   // on during CUT_DOWN / CUT_UP
-    public BoolOut CutterFault;  // latched in FAULT
+    // ===== Handshake / HMI (outputs)
+    [Header("Handshake / HMI (Outputs)")]
+    [Tooltip("Pulses HIGH once when a full cut cycle completes (BladeDown->BladeUp).")]
+    public BoolOut CutComplete;   // wire to PLCOutputBool on a SignalBus
+    public BoolOut CutterBusy;    // on during CUT_DOWN / CUT_UP
+    public BoolOut CutterFault;   // latched in FAULT
+
+    [Header("Pulse Settings")]
+    [Tooltip("Duration of the CutComplete pulse (seconds).")]
+    public float CutCompletePulse_s = 0.05f;
+
+    // ===== Timing
+    [Header("Pre-Cut Timing")]
+    [Tooltip("How long PE_Exit must remain HIGH before the cut begins.")]
+    public float PreCutDelaySec = 0.20f;
+
+    [Tooltip("Small debounce to accept PE_Exit as 'HIGH'. Set to 0 to disable.")]
+    public float ExitHighDebounceSec = 0.02f;
 
     // ===== Watchdogs
     [Header("Watchdogs (seconds)")]
@@ -52,50 +67,71 @@ public class CutterController : MonoBehaviour
     public bool VerboseLogs = false;
 
     // ===== FSM
-    private enum S { RESET, ARMED, CUT_DOWN, CUT_UP, HOLD, FAULT }
+    private enum S { RESET, ARMED, PENDING_START, CUT_DOWN, CUT_UP, HOLD, FAULT }
     [SerializeField] private S _s = S.RESET;
     private S _prev;
 
     // ===== Internals
     private bool _eStopLatched;
-    private bool _armed;           // true -> ready to accept next EXIT rising (AUTO)
+    private bool _armed;              // ready to accept next cycle (AUTO re-armed on EXIT falling)
     private float _stateTimer;
+
+    // Exit-high timing
+    private bool _exitHighValid;     // becomes true once debounce satisfied
+    private float _exitHighSince;     // when PE_Exit went HIGH
+    private float _exitHighValidAt;   // when it becomes valid (Rising + debounce)
+
+    // Pending start (after conditions met, we still wait PreCutDelaySec)
+    private bool _pendingStart;
+    private float _startAt;           // Now + PreCutDelaySec
+
+    // pulse timer
+    private float _cutCompleteT = 0f;
+
+    float Now => Time.time;
 
     // ===== Unity
     void Start() => Enter(S.RESET);
 
     void FixedUpdate()
     {
-        // Sample all inputs (updates v/prev/Rising/Falling)
+        // Sample all inputs
         Cmd_Start.Sample(); Cmd_Stop.Sample(); Cmd_Reset.Sample(); EStop_OK.Sample();
         Mode_Auto.Sample();
         GuardOK.Sample(); BladeUp.Sample(); BladeDown.Sample();
         PE_Exit.Sample();
 
-        // Hard E-Stop latch
-        if (!EStop_OK.v)
+        // Hard E-Stop latch & reset
+        if (!EStop_OK.v) { _eStopLatched = true; Enter(S.RESET); }
+        if (Cmd_Reset.Rising) { _eStopLatched = false; Enter(S.RESET); }
+
+        // Track EXIT HIGH window & debounce
+        if (PE_Exit.Rising)
         {
-            _eStopLatched = true;
-            Enter(S.RESET);
+            _exitHighSince = Now;
+            _exitHighValid = false;
+            _exitHighValidAt = Now + Mathf.Max(0f, ExitHighDebounceSec);
         }
-        if (Cmd_Reset.Rising)
+        if (PE_Exit.v && !_exitHighValid && Now >= _exitHighValidAt)
         {
-            _eStopLatched = false;
-            Enter(S.RESET);
+            _exitHighValid = true; // EXIT has been HIGH long enough to be trusted
         }
 
-        // Global re-arm: armed becomes true only after a FALLING edge (exit cleared)
-        if (PE_Exit.Falling) _armed = true;
+        // Re-arm only when EXIT falls (piece left)
+        if (PE_Exit.Falling)
+        {
+            _armed = true;
+            _exitHighValid = false;
+            _pendingStart = false; // cancel any pending start if piece left
+        }
 
-        // Boundary STOP behavior:
-        // - If in ARMED/HOLD: go/keep HOLD while STOP is high.
-        // - If mid-stroke (CUT_*): finish sub-stroke safely; HOLD will be enforced when we next reach ARMED if STOP is still high.
+        // Boundary STOP behavior
         if (Cmd_Stop.v && _s != S.FAULT)
         {
-            if (_s == S.ARMED || _s == S.HOLD)
+            if (_s == S.ARMED || _s == S.PENDING_START || _s == S.HOLD)
             {
                 Enter(S.HOLD);
-                return;
+                // don't return; we still service the completion pulse timer at end
             }
         }
 
@@ -104,9 +140,13 @@ public class CutterController : MonoBehaviour
         {
             case S.RESET:
                 {
-                    OutputsOff();
-                    _armed = !PE_Exit.v; // armed immediately if EXIT is LOW at reset
+                    OutputsOff(); PulseOff();
                     ClearFaultLamp();
+
+                    // armed at reset iff EXIT is LOW
+                    _armed = !PE_Exit.v;
+                    _pendingStart = false;
+                    _exitHighValid = PE_Exit.v && (ExitHighDebounceSec <= 0f); // if already high & no debounce, treat as valid
 
                     if (!_eStopLatched && EStop_OK.v)
                         Enter(S.ARMED);
@@ -115,40 +155,75 @@ public class CutterController : MonoBehaviour
 
             case S.ARMED:
                 {
-                    // If STOP asserted, remain HOLD.
                     if (Cmd_Stop.v) { Enter(S.HOLD); break; }
 
-                    OutputsOff();
-                    SetBusyLamp(false);
+                    OutputsOff(); SetBusyLamp(false);
 
-                    // AUTO: require Cmd_Start level, GuardOK, BladeUp, armed, and EXIT rising
+                    // Decide whether to schedule a start
+                    bool safetyOK = GuardOK.v && BladeUp.v && !_eStopLatched && EStop_OK.v;
+
                     if (Mode_Auto.v)
                     {
-                        if (Cmd_Start.v && _armed && GuardOK.v && BladeUp.v && PE_Exit.Rising)
+                        // AUTO: require Start level, armed, and EXIT HIGH (valid) — schedule delayed start
+                        if (Cmd_Start.v && _armed && safetyOK && _exitHighValid)
                         {
-                            _armed = false; // consume this rising edge
-                            Enter(S.CUT_DOWN);
+                            ScheduleStart();
+                            Enter(S.PENDING_START);
                             break;
                         }
                     }
                     else
                     {
-                        // MANUAL: one stroke per Start rising, guard & blade-up required
-                        if (Cmd_Start.Rising && GuardOK.v && BladeUp.v)
+                        // MANUAL: on Start Rising, arm a pending start; will begin when EXIT goes HIGH & valid
+                        if (Cmd_Start.Rising)
                         {
-                            Enter(S.CUT_DOWN);
+                            _armed = true; // manual doesn’t depend on rearm, but keep consistent
+                            _pendingStart = true;
+                        }
+
+                        if (_pendingStart && safetyOK && _exitHighValid)
+                        {
+                            ScheduleStart();
+                            Enter(S.PENDING_START);
                             break;
                         }
                     }
+                    break;
+                }
 
-                    // If STOP is not asserted but EXIT stays HIGH from previous cycle, we wait
-                    // for FALLING to re-arm via the global edge handler above.
+            case S.PENDING_START:
+                {
+                    // Wait out the pre-cut delay; ensure conditions still acceptable
+                    OutputsOff(); SetBusyLamp(false);
+
+                    bool safetyOK = GuardOK.v && BladeUp.v && !_eStopLatched && EStop_OK.v;
+
+                    // If EXIT dropped, cancel and go back to ARMED
+                    if (!PE_Exit.v)
+                    {
+                        _pendingStart = false;
+                        Enter(S.ARMED);
+                        break;
+                    }
+
+                    // If STOP asserted, go HOLD; we’ll come back to ARMED
+                    if (Cmd_Stop.v)
+                    {
+                        Enter(S.HOLD);
+                        break;
+                    }
+
+                    if (safetyOK && Now >= _startAt)
+                    {
+                        _pendingStart = false;
+                        _armed = false;         // consume this cycle
+                        Enter(S.CUT_DOWN);
+                    }
                     break;
                 }
 
             case S.CUT_DOWN:
                 {
-                    // Safety while moving down
                     if (!GuardOK.v) { Fault("Guard opened during CUT_DOWN"); break; }
 
                     Blade_JogDown.Set(true);
@@ -173,12 +248,14 @@ public class CutterController : MonoBehaviour
 
                     if (BladeUp.v && !BladeDown.v)
                     {
-                        // Stroke complete: return to ARMED.
+                        // Stroke complete
                         SetBusyLamp(false);
                         Blade_JogUp.Set(false);
-                        Enter(S.ARMED);
 
-                        // If STOP still held, immediately transition to HOLD from ARMED.
+                        // completion pulse
+                        FireCutCompletePulse();
+
+                        Enter(S.ARMED);
                         if (Cmd_Stop.v) Enter(S.HOLD);
                         break;
                     }
@@ -189,25 +266,32 @@ public class CutterController : MonoBehaviour
 
             case S.HOLD:
                 {
-                    OutputsOff();
-                    SetBusyLamp(false);
-                    // Resume only when STOP released; then go to ARMED.
+                    OutputsOff(); SetBusyLamp(false);
+                    _pendingStart = false; // cancel any pending sequence while on HOLD
                     if (!Cmd_Stop.v) Enter(S.ARMED);
                     break;
                 }
 
             case S.FAULT:
                 {
-                    OutputsOff();
-                    SetBusyLamp(false);
-                    SetFaultLamp(true);
-                    // Leave only via Reset (handled above)
+                    OutputsOff(); SetBusyLamp(false); SetFaultLamp(true);
+                    // leave via Reset
                     break;
                 }
         }
+
+        // Service CutComplete pulse timing every tick
+        ServicePulseTimer();
     }
 
     // ===== Helpers =====
+    void ScheduleStart()
+    {
+        _pendingStart = true;
+        _startAt = Now + Mathf.Max(0f, PreCutDelaySec);
+        if (VerboseLogs) Debug.Log($"[Cutter] Pre-cut delay scheduled: starts at t={_startAt:0.000}");
+    }
+
     void Enter(S next)
     {
         _prev = _s;
@@ -236,6 +320,7 @@ public class CutterController : MonoBehaviour
     void Fault(string why)
     {
         if (VerboseLogs) Debug.LogWarning($"[Cutter] FAULT: {why}");
+        PulseOff();
         Enter(S.FAULT);
     }
 
@@ -250,4 +335,27 @@ public class CutterController : MonoBehaviour
     }
 
     void ClearFaultLamp() => SetFaultLamp(false);
+
+    // ---- CutComplete pulse helpers ----
+    void FireCutCompletePulse()
+    {
+        _cutCompleteT = Mathf.Max(0.01f, CutCompletePulse_s);
+        if (CutComplete.tag != null) CutComplete.Set(true);
+        if (VerboseLogs) Debug.Log("[Cutter] CutComplete ↑ pulse");
+    }
+
+    void ServicePulseTimer()
+    {
+        if (_cutCompleteT > 0f)
+        {
+            _cutCompleteT -= Time.fixedDeltaTime;
+            if (_cutCompleteT <= 0f) PulseOff();
+        }
+    }
+
+    void PulseOff()
+    {
+        _cutCompleteT = 0f;
+        if (CutComplete.tag != null) CutComplete.Set(false);
+    }
 }
