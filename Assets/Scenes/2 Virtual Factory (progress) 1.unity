@@ -9164,9 +9164,9 @@ MonoBehaviour:
   ConnectionInfo:
   - Behavior: {fileID: 1138250258}
     ConnectionName: Forward
-  - Behavior: {fileID: 1821513635}
-    ConnectionName: Forward
   - Behavior: {fileID: 1941204519}
+    ConnectionName: Forward
+  - Behavior: {fileID: 1821513635}
     ConnectionName: Forward
   Status:
     Connected: 0
@@ -27986,9 +27986,9 @@ MonoBehaviour:
   ConnectionInfo:
   - Behavior: {fileID: 1138250258}
     ConnectionName: Speed
-  - Behavior: {fileID: 1821513635}
-    ConnectionName: Speed
   - Behavior: {fileID: 1941204519}
+    ConnectionName: Speed
+  - Behavior: {fileID: 1821513635}
     ConnectionName: Speed
   Status:
     Connected: 0
@@ -29030,9 +29030,9 @@ MonoBehaviour:
   ConnectionInfo:
   - Behavior: {fileID: 1138250258}
     ConnectionName: IsAtPosition
-  - Behavior: {fileID: 1821513635}
-    ConnectionName: IsAtPosition
   - Behavior: {fileID: 1941204519}
+    ConnectionName: IsAtPosition
+  - Behavior: {fileID: 1821513635}
     ConnectionName: IsAtPosition
   Status:
     Connected: 0
@@ -37282,9 +37282,9 @@ MonoBehaviour:
   ConnectionInfo:
   - Behavior: {fileID: 1138250258}
     ConnectionName: IsAtSpeed
-  - Behavior: {fileID: 1821513635}
-    ConnectionName: IsAtSpeed
   - Behavior: {fileID: 1941204519}
+    ConnectionName: IsAtSpeed
+  - Behavior: {fileID: 1821513635}
     ConnectionName: IsAtSpeed
   Status:
     Connected: 0
@@ -46048,9 +46048,9 @@ MonoBehaviour:
   ConnectionInfo:
   - Behavior: {fileID: 1138250258}
     ConnectionName: IsDriving
-  - Behavior: {fileID: 1821513635}
-    ConnectionName: IsDriving
   - Behavior: {fileID: 1941204519}
+    ConnectionName: IsDriving
+  - Behavior: {fileID: 1821513635}
     ConnectionName: IsDriving
   Status:
     Connected: 0
@@ -83044,6 +83044,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: -6958258861561203636, guid: 59a41324d88e0334084b2a4950db7c3d, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1803910489}
+    - targetCorrespondingSourceObject: {fileID: -6958258861561203636, guid: 59a41324d88e0334084b2a4950db7c3d, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1803910493}
   m_SourcePrefab: {fileID: 100100000, guid: 59a41324d88e0334084b2a4950db7c3d, type: 3}
 --- !u!4 &1803910482 stripped
 Transform:
@@ -83181,6 +83184,48 @@ MonoBehaviour:
   IsAtPosition: {fileID: 0}
   IsAtSpeed: {fileID: 0}
   IsDriving: {fileID: 1920216616}
+--- !u!114 &1803910493
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1803910483}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b36ca0a7fa1c78448b6ccef5f8c2fa9d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: realvirtual.base::realvirtual.Drive_Cylinder
+  Name: 
+  Active: 0
+  FromTemplate: {fileID: 0}
+  realvirtualController: {fileID: 0}
+  HideNonG44Components: 0
+  SceneIsAdditive: 0
+  ForceStop: 0
+  OneBitCylinder: 0
+  MinPos: 0
+  MaxPos: 100
+  TimeOut: 1
+  TimeIn: 1
+  StopWhenDrivingToMin: {fileID: 0}
+  StopWhenDrivingToMax: {fileID: 0}
+  _out: 0
+  _in: 0
+  _isOut: 0
+  _isIn: 0
+  _movingOut: 0
+  _movingIn: 0
+  _isMax: 0
+  _isMin: 0
+  Out: {fileID: 0}
+  In: {fileID: 0}
+  IsOut: {fileID: 0}
+  IsIn: {fileID: 0}
+  IsMax: {fileID: 0}
+  IsMin: {fileID: 0}
+  IsMovingOut: {fileID: 0}
+  IsMovingIn: {fileID: 0}
 --- !u!1 &1806034834
 GameObject:
   m_ObjectHideFlags: 0
