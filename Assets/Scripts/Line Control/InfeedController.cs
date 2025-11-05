@@ -2,92 +2,83 @@
 using realvirtual;
 using VME.IO;
 
-/// InfeedConveyor — EXIT-sensor–driven indexing + gated timed spawning
-/// AUTO: While Cmd_Start=1, feed until PE_Exit=HIGH (via Rising edge), stop; re-arm on PE_Exit=LOW (after delay).
-/// MANUAL: Each Cmd_Start press feeds once to PE_Exit Rising.
-/// Entry sensor is only for initial approach/settle; not used to stop or index length.
+/// InfeedConveyor — EXIT-level stop + continuous-LOW rearm + distance-based sourcing via signal + post-cut push assist
 [DefaultExecutionOrder(-10)]
 public class InfeedConveyor : MonoBehaviour
 {
     [Header("Shared Control Signals")]
-    public BoolIn Cmd_Start;   // shared global signals
-    public BoolIn Cmd_Stop;
-    public BoolIn Cmd_Reset;
-    public BoolIn EStop_OK;
+    public BoolIn Cmd_Start, Cmd_Stop, Cmd_Reset, EStop_OK;
 
     [Header("Mode Bit (true=AUTO, false=MANUAL)")]
     public BoolIn Mode_Auto;
 
     [Header("Inputs")]
-    public BoolIn PE_Entry;  // optional: for initial approach only
-    public BoolIn PE_Exit;   // primary index sensor (edges drive logic)
+    public BoolIn PE_Entry;     // visual only
+    public BoolIn PE_Exit;      // primary index (level used for stop)
 
     [Header("Outputs to Drive")]
     public BoolOut Conv_Infeed_Fwd;
     public FloatOut Conv_Infeed_TargetSpeed_mmps;
 
+    [Header("Source Control (wire to Source inputs)")]
+    [Tooltip("Wire this to Source.SourceGenerateOnDistance (BoolIn on Source).")]
+    public BoolOut SourceGenerateOnDistance_Out;
+    [Tooltip("Optional single seed (unused in AUTO). Wire to Source.SourceGenerate.")]
+    public BoolOut SourceGenerateOnce_Out;
+
     [Header("Motion Settings")]
-    [Tooltip("Conveyor command speed in mm/s.")]
     public float SpeedMMps = 300f;
-    [Tooltip("Delay after reaching entry sensor before feeding to exit (s).")]
-    public float StepDelaySec = 0.20f;
 
     [Header("Watchdogs (seconds)")]
-    [Tooltip("Max time allowed to find the entry sensor in APPROACH.")]
-    public float WD_ToEntry_s = 5.0f;
-    [Tooltip("Max time allowed to reach EXIT=HIGH during FEED_TO_EXIT.")]
     public float WD_ToExit_s = 5.0f;
 
-    [Header("Re-arm (Exit LOW → next cycle)")]
-    [Tooltip("Delay after EXIT becomes LOW before the next feed is allowed.")]
+    [Header("Re-arm (Exit LOW must be continuous)")]
+    [Tooltip("EXIT must be LOW continuously this long before next feed is allowed.")]
     public float ReArmDelaySec = 0.30f;
 
-    [Header("Timed Spawning (while belt commanded forward)")]
-    [Tooltip("Source to spawn from. Ensure its AutomaticGeneration=false and Interval=0.")]
-    public Source SpawnSource;
-    [Min(0.05f)] public float SpawnPeriod_s = 1.50f;
-    [Tooltip("Optional delay after forward command before first spawn (e.g., belt ramp).")]
-    public float SpawnStartDelay_s = 0.00f;
-    [Tooltip("If true, also require EStop_OK for spawns (recommended).")]
-    public bool SpawnRequireEStopOK = true;
+    [Header("Push Assist (post-cut nudge)")]
+    [Tooltip("Enable a short nudge after cut complete to hand off to outfeed.")]
+    public bool EnablePushAssist = true;
+    [Tooltip("Cut complete pulse from Cutter (>=40–60 ms).")]
+    public BoolIn Cut_Complete;            // optional; if null, push will never arm
+    [Tooltip("Blade up / path clear (safety).")]
+    public BoolIn Cutter_Safe;             // optional safety gate
+    [Tooltip("Pick station presence (require empty before push).")]
+    public BoolIn PE_Pick;                 // optional; used if PushRequirePickEmpty = true
+    [Tooltip("How fast to nudge during push (mm/s).")]
+    public float PushAssistSpeedMMps = 150f;
+    [Tooltip("How long to nudge (s). Keep tiny (0.10–0.25s).")]
+    public float PushAssistDuration_s = 0.15f;
+    [Tooltip("How long after Cut_Complete the push may occur (s).")]
+    public float PushAssistWindow_s = 1.00f;
+    [Tooltip("Require pick to be empty before push.")]
+    public bool PushRequirePickEmpty = true;
+    [Tooltip("Require Cutter_Safe before push.")]
+    public bool PushRequireCutterSafe = true;
 
     [Header("Diagnostics")]
     public bool VerboseLogs = false;
 
-    // ===== FSM =====
-    private enum S { RESET, IDLE, APPROACH, WAIT_AT_ENTRY, FEED_TO_EXIT, HOLD, FAULT }
-    [SerializeField] private S _s = S.RESET;
-    private S _prev;
+    private enum S { RESET, IDLE, FEED_TO_EXIT, PUSH_ASSIST, HOLD, FAULT }
+    [SerializeField] private S _s = S.RESET, _prev;
 
-    // ===== Internals =====
     private bool _eStopLatched;
-    private bool _armed;       // allowed to accept next feed
-    private bool _rearmPending;
-    private float _rearmAt;    // time when arming becomes allowed (Exit LOW + delay)
+    private bool _armed;               // allowed to accept next feed
+    private float _exitLowAccum;        // continuous-low timer for EXIT
     private float _enteredAt;
-
-    // Commanded forward latch
     private bool _cmdFwd;
+    private int _minRunGuardFrames;   // ignore EXIT first physics tick in FEED
 
-    // Timed spawning internals
-    private bool _spawnTicking;
-    private float _spawnDelayT;
+    // Push assist internals
+    private bool _pushArmed;
+    private float _pushArmUntil;
+    private float _pushEndAt;
 
     float Now => Time.time;
 
-    void Start()
-    {
-        if (SpawnSource != null) SpawnSource.CancelInvoke();
-        Enter(S.RESET);
-    }
-
-    void OnEnable()
-    {
-        if (SpawnSource != null) SpawnSource.CancelInvoke();
-        StopSpawning();
-    }
-
-    void OnDisable() => StopSpawning();
+    void Start() { SetDistanceGen(false); Enter(S.RESET); }
+    void OnEnable() { SetDistanceGen(false); }
+    void OnDisable() { SetDistanceGen(false); }
 
     void FixedUpdate()
     {
@@ -95,33 +86,39 @@ public class InfeedConveyor : MonoBehaviour
         Cmd_Start.Sample(); Cmd_Stop.Sample(); Cmd_Reset.Sample(); EStop_OK.Sample();
         Mode_Auto.Sample();
         PE_Entry.Sample(); PE_Exit.Sample();
+        if (Cut_Complete != null) Cut_Complete.Sample();
+        if (Cutter_Safe != null) Cutter_Safe.Sample();
+        if (PE_Pick != null) PE_Pick.Sample();
 
-        // Hard E-Stop latch & reset
+        // E-Stop latch & reset
         if (!EStop_OK.v) { _eStopLatched = true; Enter(S.RESET); }
         if (Cmd_Reset.Rising) { _eStopLatched = false; Enter(S.RESET); }
-
         bool runEnable = !_eStopLatched && EStop_OK.v;
 
-        // --- Exit-edge rearm with delay ---
-        if (PE_Exit.Falling)
+        // === Arm push on cut-complete (bounded window) ===
+        if (EnablePushAssist && Cut_Complete != null && Cut_Complete.Rising)
         {
-            _rearmPending = true;
-            _rearmAt = Now + Mathf.Max(0f, ReArmDelaySec);
+            _pushArmed = true;
+            _pushArmUntil = Now + Mathf.Max(0.01f, PushAssistWindow_s);
         }
-        if (_rearmPending && Now >= _rearmAt)
-        {
-            _armed = true;
-            _rearmPending = false;
-        }
+        // Auto-expire the arm window
+        if (_pushArmed && Now > _pushArmUntil) _pushArmed = false;
 
-        // STOP boundary behavior
+        // === EXIT continuous-LOW blanking (rearm discipline) ===
+        if (!PE_Exit.v) { _exitLowAccum += Time.fixedDeltaTime; }
+        else { _exitLowAccum = 0f; _armed = false; }
+
+        if (_exitLowAccum >= Mathf.Max(0f, ReArmDelaySec))
+            _armed = true;
+
+        // STOP boundary: drop sourcing first, then stop belt (also interrupts PUSH)
         if (Cmd_Stop.v && _s != S.FAULT)
         {
-            if (_s == S.IDLE || _s == S.WAIT_AT_ENTRY || _s == S.APPROACH || _s == S.HOLD)
+            if (_s == S.IDLE || _s == S.FEED_TO_EXIT || _s == S.PUSH_ASSIST || _s == S.HOLD)
             {
+                SetDistanceGen(false);
                 CommandStop();
                 Enter(S.HOLD);
-                // no return; spawning gate still evaluates below
             }
         }
 
@@ -129,20 +126,11 @@ public class InfeedConveyor : MonoBehaviour
         {
             case S.RESET:
                 {
+                    SetDistanceGen(false);
                     CommandStop();
-                    // If EXIT is already LOW at reset, consider whether to delay or arm immediately:
-                    // Use the same delay logic for consistency.
-                    if (!PE_Exit.v)
-                    {
-                        _rearmPending = true;
-                        _rearmAt = Now + Mathf.Max(0f, ReArmDelaySec);
-                        _armed = false;
-                    }
-                    else
-                    {
-                        _rearmPending = false;
-                        _armed = false;
-                    }
+                    _exitLowAccum = 0f;
+                    _armed = false;
+                    _pushArmed = false;
                     if (runEnable) Enter(S.IDLE);
                     break;
                 }
@@ -151,51 +139,31 @@ public class InfeedConveyor : MonoBehaviour
                 {
                     CommandStop();
 
-                    // MANUAL: one feed per Start press
+                    // ---- Optional post-cut push assist (no sourcing, no feed) ----
+                    if (EnablePushAssist && _pushArmed && Now <= _pushArmUntil && runEnable && !Cmd_Stop.v)
+                    {
+                        bool pickOK = !PushRequirePickEmpty || (PE_Pick != null && !PE_Pick.v);
+                        bool safeOK = !PushRequireCutterSafe || (Cutter_Safe != null && Cutter_Safe.v);
+                        if (pickOK && safeOK)
+                        {
+                            SetDistanceGen(false);     // never spawn during push
+                            Enter(S.PUSH_ASSIST);
+                            break;
+                        }
+                    }
+
+                    // MANUAL: one feed per Start press, only when EXIT low and armed
                     if (!Mode_Auto.v)
                     {
-                        if (Cmd_Start.Rising && !PE_Exit.v)
-                        {
-                            if (PE_Entry.v) Enter(S.WAIT_AT_ENTRY);
-                            else Enter(S.FEED_TO_EXIT);
-                        }
+                        if (Cmd_Start.Rising && !PE_Exit.v && _armed)
+                            Enter(S.FEED_TO_EXIT);
                         break;
                     }
 
-                    // AUTO: require Start level + armed
-                    if (Mode_Auto.v && Cmd_Start.v && _armed)
-                    {
-                        if (PE_Entry.v) Enter(S.WAIT_AT_ENTRY);
-                        else Enter(S.APPROACH);
-                    }
-                    break;
-                }
-
-            case S.APPROACH:
-                {
-                    if (!runEnable) { Fault("Run lost during APPROACH"); break; }
-
-                    // Move until entry sensor seen (initial alignment only)
-                    CommandRun(SpeedMMps);
-
-                    if (PE_Entry.v)
-                    {
-                        CommandStop();
-                        Enter(S.WAIT_AT_ENTRY);
-                    }
-                    else if (Now - _enteredAt > WD_ToEntry_s)
-                    {
-                        Fault("Approach watchdog");
-                    }
-                    break;
-                }
-
-            case S.WAIT_AT_ENTRY:
-                {
-                    // Small dwell at entry before feeding to exit
-                    CommandStop();
-                    if (Now - _enteredAt >= StepDelaySec)
+                    // AUTO: Start level + armed + Exit low
+                    if (Mode_Auto.v && Cmd_Start.v && _armed && !PE_Exit.v)
                         Enter(S.FEED_TO_EXIT);
+
                     break;
                 }
 
@@ -203,28 +171,45 @@ public class InfeedConveyor : MonoBehaviour
                 {
                     if (!runEnable) { Fault("Run lost during FEED_TO_EXIT"); break; }
 
-                    // consume armed at the start of the feed
-                    _armed = false;
-                    _rearmPending = false;
+                    // consume armed at start; enable distance-based sourcing (first time in)
+                    if (_minRunGuardFrames == 1) { _armed = false; SetDistanceGen(true); }
 
                     CommandRun(SpeedMMps);
 
-                    // Primary stop: EXIT rising => sheet positioned
-                    if (PE_Exit.Rising)
+                    // PRIMARY STOP: EXIT LEVEL HIGH (robust against missed Rising)
+                    if (_minRunGuardFrames > 0)
                     {
+                        _minRunGuardFrames--; // wait one physics tick before honoring EXIT
+                    }
+                    else if (PE_Exit.v)
+                    {
+                        // terminate sourcing first, then stop belt
+                        SetDistanceGen(false);
                         CommandStop();
                         Enter(S.IDLE);
-
-                        // If STOP is still high, fall into HOLD immediately
                         if (Cmd_Stop.v) Enter(S.HOLD);
                         break;
                     }
 
-                    // Watchdog: took too long to find exit
+                    // Watchdog
                     if (Now - _enteredAt > WD_ToExit_s)
                     {
+                        SetDistanceGen(false);
                         CommandStop();
                         Fault("ToExit watchdog");
+                    }
+                    break;
+                }
+
+            case S.PUSH_ASSIST:
+                {
+                    // short, controlled nudge; never enable sourcing here
+                    CommandRun(Mathf.Max(0f, PushAssistSpeedMMps));
+                    if (Now >= _pushEndAt)
+                    {
+                        CommandStop();
+                        _pushArmed = false;     // consume the arm
+                        Enter(S.IDLE);
                     }
                     break;
                 }
@@ -232,45 +217,20 @@ public class InfeedConveyor : MonoBehaviour
             case S.HOLD:
                 {
                     CommandStop();
-                    // Resume only when STOP released and Start asserted (AUTO) or Start pressed (MANUAL)
                     if (!Cmd_Stop.v)
                     {
-                        if (Mode_Auto.v)
-                        {
-                            if (Cmd_Start.v) Enter(S.IDLE); // armed checked in IDLE
-                        }
-                        else
-                        {
-                            if (Cmd_Start.Rising) Enter(S.IDLE);
-                        }
+                        if (Mode_Auto.v) { if (Cmd_Start.v) Enter(S.IDLE); }
+                        else { if (Cmd_Start.Rising) Enter(S.IDLE); }
                     }
                     break;
                 }
 
             case S.FAULT:
                 {
+                    SetDistanceGen(false);
                     CommandStop();
-                    // Leave via Reset
                     break;
                 }
-        }
-
-        // ---- Timed Spawning Gate ----
-        bool forwardCommanded = _cmdFwd;
-        bool spawnPermitted = forwardCommanded && (!SpawnRequireEStopOK || (EStop_OK.v && !_eStopLatched)) && !Cmd_Stop.v;
-
-        if (!spawnPermitted)
-        {
-            StopSpawning();
-            _spawnDelayT = 0f;
-        }
-        else
-        {
-            if (!_spawnTicking)
-            {
-                _spawnDelayT += Time.fixedDeltaTime;
-                if (_spawnDelayT >= SpawnStartDelay_s) StartSpawning();
-            }
         }
     }
 
@@ -280,7 +240,6 @@ public class InfeedConveyor : MonoBehaviour
         Conv_Infeed_TargetSpeed_mmps.Set(speed);
         Conv_Infeed_Fwd.Set(true);
         _cmdFwd = true;
-        if (!_spawnTicking) _spawnDelayT = 0f; // restart spawn delay when motion starts
     }
 
     void CommandStop()
@@ -290,28 +249,11 @@ public class InfeedConveyor : MonoBehaviour
         _cmdFwd = false;
     }
 
-    // ===== Timed Spawning Helpers =====
-    void StartSpawning()
+    // ===== Source Distance Gen Helper (signal-driven) =====
+    void SetDistanceGen(bool on)
     {
-        if (SpawnSource == null || _spawnTicking) return;
-        SpawnSource.CancelInvoke();
-        CancelInvoke(nameof(SpawnTick));
-        InvokeRepeating(nameof(SpawnTick), 0f, Mathf.Max(0.01f, SpawnPeriod_s));
-        _spawnTicking = true;
-        if (VerboseLogs) Debug.Log("[Infeed] Spawning START");
-    }
-
-    void StopSpawning()
-    {
-        CancelInvoke(nameof(SpawnTick));
-        _spawnTicking = false;
-        if (VerboseLogs) Debug.Log("[Infeed] Spawning STOP");
-    }
-
-    void SpawnTick()
-    {
-        if (SpawnSource != null)
-            SpawnSource.Generate();
+        if (SourceGenerateOnDistance_Out != null)
+            SourceGenerateOnDistance_Out.Set(on);
     }
 
     // ===== State Helpers =====
@@ -320,6 +262,13 @@ public class InfeedConveyor : MonoBehaviour
         _prev = _s;
         _s = s;
         _enteredAt = Now;
+
+        if (s == S.FEED_TO_EXIT)
+            _minRunGuardFrames = 1;   // ignore EXIT for the first physics tick to avoid immediate stop
+
+        if (s == S.PUSH_ASSIST)
+            _pushEndAt = Now + Mathf.Max(0.01f, PushAssistDuration_s);
+
         if (VerboseLogs) Debug.Log($"[Infeed] {_prev} → {_s} @ {Now:0.000}s (Exit={PE_Exit.v})");
     }
 

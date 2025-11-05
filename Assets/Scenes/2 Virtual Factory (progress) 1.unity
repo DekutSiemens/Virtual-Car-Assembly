@@ -944,6 +944,78 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 27553828}
   m_CullTransparentMesh: 1
+--- !u!1 &28365980
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 28365982}
+  - component: {fileID: 28365981}
+  m_Layer: 0
+  m_Name: PLCOutputBool(SourceGenerate)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &28365981
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 28365980}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0fc4c8bbb8de4364e86efbde2179e19c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: realvirtual.base::realvirtual.PLCOutputBool
+  Name: 
+  Active: 0
+  FromTemplate: {fileID: 0}
+  realvirtualController: {fileID: 0}
+  HideNonG44Components: 0
+  SceneIsAdditive: 0
+  ForceStop: 0
+  Comment: 
+  OriginDataType: 
+  Settings:
+    Active: 1
+    DetectBoolFlanks: 0
+    Override: 0
+  EventSignalChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  Autoconnected: 0
+  UpdateEnable: 0
+  ConnectionInfo:
+  - Behavior: {fileID: 984377524}
+    ConnectionName: SourceGenerateOnDistance
+  Status:
+    Connected: 0
+    ValueOverride: 0
+    Value: 0
+    OldValue: 0
+  ChangedToTrue: 0
+  ChangedToFalse: 0
+--- !u!4 &28365982
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 28365980}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1964807672}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &29310847
 GameObject:
   m_ObjectHideFlags: 0
@@ -9164,13 +9236,13 @@ MonoBehaviour:
   ConnectionInfo:
   - Behavior: {fileID: 1138250258}
     ConnectionName: Forward
-  - Behavior: {fileID: 1941204519}
-    ConnectionName: Forward
   - Behavior: {fileID: 1821513635}
+    ConnectionName: Forward
+  - Behavior: {fileID: 1941204519}
     ConnectionName: Forward
   Status:
     Connected: 0
-    ValueOverride: 0
+    ValueOverride: 1
     Value: 0
     OldValue: 0
   ChangedToTrue: 0
@@ -27986,13 +28058,13 @@ MonoBehaviour:
   ConnectionInfo:
   - Behavior: {fileID: 1138250258}
     ConnectionName: Speed
-  - Behavior: {fileID: 1941204519}
-    ConnectionName: Speed
   - Behavior: {fileID: 1821513635}
+    ConnectionName: Speed
+  - Behavior: {fileID: 1941204519}
     ConnectionName: Speed
   Status:
     Connected: 0
-    ValueOverride: 200
+    ValueOverride: 1000
     Value: 0
     OldValue: 0
 --- !u!1 &599340499
@@ -29030,9 +29102,9 @@ MonoBehaviour:
   ConnectionInfo:
   - Behavior: {fileID: 1138250258}
     ConnectionName: IsAtPosition
-  - Behavior: {fileID: 1941204519}
-    ConnectionName: IsAtPosition
   - Behavior: {fileID: 1821513635}
+    ConnectionName: IsAtPosition
+  - Behavior: {fileID: 1941204519}
     ConnectionName: IsAtPosition
   Status:
     Connected: 0
@@ -37282,9 +37354,9 @@ MonoBehaviour:
   ConnectionInfo:
   - Behavior: {fileID: 1138250258}
     ConnectionName: IsAtSpeed
-  - Behavior: {fileID: 1941204519}
-    ConnectionName: IsAtSpeed
   - Behavior: {fileID: 1821513635}
+    ConnectionName: IsAtSpeed
+  - Behavior: {fileID: 1941204519}
     ConnectionName: IsAtSpeed
   Status:
     Connected: 0
@@ -45968,8 +46040,8 @@ MonoBehaviour:
   OnCreateDestroyComponents: []
   StartInterval: 0
   Interval: 0
-  AutomaticGeneration: 0
-  GenerateIfDistance: 910
+  AutomaticGeneration: 1
+  GenerateIfDistance: 900
   RandomDistance: 0
   RangeDistance: 300
   LimitNumber: 0
@@ -45978,7 +46050,7 @@ MonoBehaviour:
   GenerateMU: 0
   DeleteAllMU: 0
   SourceGenerate: {fileID: 0}
-  SourceGenerateOnDistance: {fileID: 0}
+  SourceGenerateOnDistance: {fileID: 28365981}
   EventMUCreated:
     m_PersistentCalls:
       m_Calls: []
@@ -46048,9 +46120,9 @@ MonoBehaviour:
   ConnectionInfo:
   - Behavior: {fileID: 1138250258}
     ConnectionName: IsDriving
-  - Behavior: {fileID: 1941204519}
-    ConnectionName: IsDriving
   - Behavior: {fileID: 1821513635}
+    ConnectionName: IsDriving
+  - Behavior: {fileID: 1941204519}
     ConnectionName: IsDriving
   Status:
     Connected: 0
@@ -50739,7 +50811,7 @@ MonoBehaviour:
     ConnectionName: Forward
   Status:
     Connected: 0
-    ValueOverride: 0
+    ValueOverride: 1
     Value: 0
     OldValue: 0
   ChangedToTrue: 0
@@ -63492,7 +63564,7 @@ MonoBehaviour:
     ConnectionName: Speed
   Status:
     Connected: 0
-    ValueOverride: 200
+    ValueOverride: 1000
     Value: 0
     OldValue: 0
 --- !u!1 &1347601221
@@ -71869,8 +71941,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 4.6, y: 0.06, z: 0.61}
-  m_Center: {x: 2.3, y: -0.035, z: 0}
+  m_Size: {x: 4.65, y: 0.06, z: 0.61}
+  m_Center: {x: 2.325, y: -0.035, z: 0}
 --- !u!114 &1561484086
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -71890,7 +71962,7 @@ MonoBehaviour:
   HideNonG44Components: 0
   SceneIsAdditive: 0
   ForceStop: 0
-  Length: 4.6
+  Length: 4.65
   ShowGizmos: 1
 --- !u!114 &1561484087
 MonoBehaviour:
@@ -71912,7 +71984,7 @@ MonoBehaviour:
   SceneIsAdditive: 0
   ForceStop: 0
   Circular: 0
-  Length: 4.6
+  Length: 4.65
   Radius: 1
   Angle: 90
   ColliderBorderZ: 0.2
@@ -79026,17 +79098,34 @@ MonoBehaviour:
     tag: {fileID: 1075904354}
   Conv_Infeed_TargetSpeed_mmps:
     tag: {fileID: 1343122753}
+  SourceGenerateOnDistance_Out:
+    tag: {fileID: 28365981}
+  SourceGenerateOnce_Out:
+    tag: {fileID: 0}
   SpeedMMps: 1000
-  StepDelaySec: 0.5
-  WD_ToEntry_s: 20
   WD_ToExit_s: 20
-  ReArmDelaySec: 5
-  SpawnSource: {fileID: 984377541}
-  SpawnPeriod_s: 0.87
-  SpawnStartDelay_s: 0
-  SpawnRequireEStopOK: 1
+  ReArmDelaySec: 2
+  EnablePushAssist: 1
+  Cut_Complete:
+    tag: {fileID: 1946917965}
+    v: 0
+    prev: 0
+  Cutter_Safe:
+    tag: {fileID: 399954139}
+    v: 0
+    prev: 0
+  PE_Pick:
+    tag: {fileID: 0}
+    v: 0
+    prev: 0
+  PushAssistSpeedMMps: 1000
+  PushAssistDuration_s: 0.15
+  PushAssistWindow_s: 1
+  PushRequirePickEmpty: 1
+  PushRequireCutterSafe: 1
   VerboseLogs: 1
   _s: 0
+  _prev: 0
 --- !u!4 &1723043423
 Transform:
   m_ObjectHideFlags: 0
@@ -79161,6 +79250,10 @@ MonoBehaviour:
     tag: {fileID: 1946917965}
     v: 0
     prev: 0
+  Cutter_Safe:
+    tag: {fileID: 399954139}
+    v: 0
+    prev: 0
   Conv_Outfeed_Fwd:
     tag: {fileID: 236748094}
   Conv_Outfeed_TargetSpeed_mmps:
@@ -79168,8 +79261,10 @@ MonoBehaviour:
   SpeedMMps: 1000
   WD_ToPick_s: 20
   PickClearDelay_s: 0.5
-  VerboseLogs: 0
+  RequireCutterSafe: 1
+  VerboseLogs: 1
   _s: 0
+  _prev: 0
 --- !u!114 &1723043426
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -83191,7 +83286,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1803910483}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b36ca0a7fa1c78448b6ccef5f8c2fa9d, type: 3}
   m_Name: 
@@ -83667,7 +83762,7 @@ Transform:
   m_GameObject: {fileID: 1821513635}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: 0.7071059, z: -0, w: 0.7071078}
-  m_LocalPosition: {x: 0, y: 0.073, z: 1.288}
+  m_LocalPosition: {x: 0, y: 0.073, z: 1.232}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -84705,7 +84800,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &1852341408
 Transform:
   m_ObjectHideFlags: 0
@@ -89140,6 +89235,7 @@ Transform:
   - {fileID: 271016483}
   - {fileID: 2061323376}
   - {fileID: 797426383}
+  - {fileID: 28365982}
   m_Father: {fileID: 638642885}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1966970290
