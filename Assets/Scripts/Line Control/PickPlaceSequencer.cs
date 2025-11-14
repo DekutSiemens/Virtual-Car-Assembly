@@ -98,6 +98,7 @@ public class PickPlaceSequencer : MonoBehaviour
     float settleTimer;
     float pulseHoldUntil;
 
+
     // cached for current step
     Step cur;
     LinkIO cio;
