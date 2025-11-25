@@ -14,13 +14,22 @@ public class PickPlaceSequencer : MonoBehaviour
 
     [Header("Controller Status (Outputs, optional)")]
     public BoolOut PnP_Busy;
-    public BoolOut PnP_Done;
+    public BoolOut PnP_Done; // Pulses high for one frame when a cycle completes
 
     // ---------------- Start gating ----------------
-    [Header("Start gating (sheet present)")]
-    [Tooltip("Presence sensor that is TRUE when the cut sheet is parked at the pick position.")]
+    [Header("Cycle Trigger Inputs")]
+    [Tooltip("Presence sensor: TRUE when a NEW sheet is at the pick position (from Outfeed)")]
     public BoolIn SheetAtPick;
-    [Tooltip("If true, a new cycle only starts when Cmd_Start is HIGH AND SheetAtPick is HIGH.")]
+
+    [Header("Press Handshake Inputs")]
+    [Tooltip("Presence sensor: TRUE when a STAMPED part is ready for pickup (from Press)")]
+    public BoolIn StampedPartAtPress;
+    [Tooltip("Presence sensor: TRUE when ANY sheet is on the press die (wire to S_SheetAtPress)")]
+    public BoolIn SheetOnPress;
+    [Tooltip("Logic signal: TRUE when press is stamping (Bridge from StampingPressController.Press_Busy)")] // <-- NEW
+    public BoolIn PressIsBusy; // <-- NEW
+
+    [Tooltip("If true, a new cycle only starts when Cmd_Start is HIGH AND a sheet sensor is HIGH.")]
     public bool GateStartBySheetSensor = true;
 
     // ---------------- Grip (optional single-bit pick/place) ----------------
@@ -69,8 +78,11 @@ public class PickPlaceSequencer : MonoBehaviour
         public GripAction Grip = GripAction.Off;
     }
 
-    [Header("Program (runs top → bottom)")]
-    public Step[] Steps;
+    [Header("Program A: Pick from Conveyor -> Place in Press")]
+    public Step[] Steps_PickFromConveyor;
+
+    [Header("Program B: Pick from Press -> Place at Exit")]
+    public Step[] Steps_PickFromPress;
 
     // ---------------- Behaviour Options ----------------
     [Header("Controller Options")]
@@ -86,61 +98,84 @@ public class PickPlaceSequencer : MonoBehaviour
     float _nextLogAt;
 
     // ---------------- FSM ------------------------------
-    enum STATE { RESET, EXEC_PREP, EXEC_RUN, DWELL, DONE, FAULT }
-    [SerializeField] STATE State = STATE.RESET;
-    STATE _prev;
+    // High-level "Job" controller
+    enum CycleState { RESET, IDLE, RUNNING_CONVEYOR_CYCLE, RUNNING_PRESS_CYCLE, FAULT }
+    // Low-level "Step" executor
+    enum ExecState { PREP, RUN, DWELL, DONE }
+
+    [SerializeField] CycleState CState = CycleState.RESET;
+    [SerializeField] ExecState EState = ExecState.DONE;
+    CycleState _prevCState;
+    ExecState _prevEState;
+
 
     // ---------------- Internals ------------------------
     bool eStopLatched;
     bool runEnable;
     int stepIdx;
-    float stateTimer;
+    float stateTimer_C; // Cycle state timer
+    float stateTimer_E; // Executor state timer
     float settleTimer;
     float pulseHoldUntil;
-
 
     // cached for current step
     Step cur;
     LinkIO cio;
+    Step[] activeProgram; // Points to the program we are currently running
 
     // ===================================================
     // Unity
     // ===================================================
     void Start()
     {
-        Enter(STATE.RESET);
+        EnterCState(CycleState.RESET);
     }
 
     void FixedUpdate()
     {
         SampleInputs();
 
-        // E-Stop latch
+        // --- E-Stop & Reset ---
         if (!EStop_OK.v)
         {
             if (!eStopLatched && VerboseLogs) Debug.LogWarning("[PnP] E-STOP drop -> latched");
             eStopLatched = true;
             SafeOutputs();
-            Enter(STATE.RESET);
+            EnterCState(CycleState.RESET);
         }
 
         if (Cmd_Reset.Rising)
         {
             eStopLatched = false;
-            Enter(STATE.RESET);
+            EnterCState(CycleState.RESET);
         }
 
         runEnable = (!eStopLatched) && EStop_OK.v;
 
-        // FSM
-        switch (State)
+        // --- Top-Level State Machine (Cycles) ---
+        stateTimer_C += Time.fixedDeltaTime;
+
+        // Clear Done pulse after one frame
+        if (PnP_Done?.tag == true && PnP_Done.Get())
         {
-            case STATE.RESET: Tick_RESET(); break;
-            case STATE.EXEC_PREP: Tick_EXEC_PREP(); break;
-            case STATE.EXEC_RUN: Tick_EXEC_RUN(); break;
-            case STATE.DWELL: Tick_DWELL(); break;
-            case STATE.DONE: Tick_DONE(); break;
-            case STATE.FAULT: Tick_FAULT(); break;
+            PnP_Done.Set(false);
+        }
+
+        switch (CState)
+        {
+            case CycleState.RESET:
+                Tick_RESET();
+                break;
+            case CycleState.IDLE:
+                Tick_IDLE();
+                break;
+            case CycleState.RUNNING_CONVEYOR_CYCLE:
+            case CycleState.RUNNING_PRESS_CYCLE:
+                Tick_RUNNING(); // This function runs the sub-state machine
+                break;
+            case CycleState.FAULT:
+                Tick_FAULT();
+                break;
         }
 
         MaintainStartPulse();
@@ -153,8 +188,9 @@ public class PickPlaceSequencer : MonoBehaviour
     }
 
     // ===================================================
-    // State logic
+    // Top-Level State logic
     // ===================================================
+
     void Tick_RESET()
     {
         SafeOutputs();
@@ -162,38 +198,101 @@ public class PickPlaceSequencer : MonoBehaviour
         if (PnP_Done?.tag) PnP_Done.Set(false);
 
         stepIdx = 0;
-        stateTimer = 0f;
-        settleTimer = 0f;
+        activeProgram = null;
+        EState = ExecState.DONE; // Ensure executor is idle
 
-        if (!runEnable) return;
-
-        // Level-gated start:
-        bool canStart = GateStartBySheetSensor ? (Cmd_Start.v && SheetAtPick.v) : Cmd_Start.Rising;
-        if (canStart)
+        if (runEnable)
         {
-            BeginProgram();
+            EnterCState(CycleState.IDLE);
         }
     }
 
-    void BeginProgram()
+    void Tick_IDLE()
     {
-        if (Steps == null || Steps.Length == 0) { Fault("No steps configured"); return; }
-        if (PnP_Busy?.tag) PnP_Busy.Set(true);
-        Enter(STATE.EXEC_PREP);
+        if (PnP_Busy?.tag) PnP_Busy.Set(false);
+        if (!runEnable) { EnterCState(CycleState.RESET); return; }
+        if (Cmd_Stop.v) return; // Stay idle if Stop is held
+
+        // Check for start command
+        bool startActive = GateStartBySheetSensor ? Cmd_Start.v : (Cmd_Start.Rising || Cmd_Start.v);
+
+        // --- PRIORITY LOGIC ---
+        // 1. Always clear the press first.
+        if (StampedPartAtPress.v && startActive && (Steps_PickFromPress?.Length > 0))
+        {
+            Log("Stamped part detected. Starting PRESS_CYCLE.");
+            StartExecutor(Steps_PickFromPress, CycleState.RUNNING_PRESS_CYCLE);
+        }
+        // 2. Only if press is clear AND EMPTY AND NOT BUSY, check for a new sheet.
+        else if (SheetAtPick.v && !SheetOnPress.v && !PressIsBusy.v && startActive && (Steps_PickFromConveyor?.Length > 0)) // <-- MODIFIED
+        {
+            Log("New sheet detected AND press is empty/idle. Starting CONVEYOR_CYCLE.");
+            StartExecutor(Steps_PickFromConveyor, CycleState.RUNNING_CONVEYOR_CYCLE);
+        }
     }
+
+    void StartExecutor(Step[] program, CycleState runningState)
+    {
+        if (program == null || program.Length == 0) { Fault("No steps configured for this cycle"); return; }
+
+        activeProgram = program;
+        stepIdx = 0;
+        if (PnP_Busy?.tag) PnP_Busy.Set(true);
+
+        EnterCState(runningState);
+        EnterEState(ExecState.PREP); // Start the executor
+    }
+
+    // This function manages the execution of the active program
+    void Tick_RUNNING()
+    {
+        if (!runEnable) { Fault("Run lost during cycle"); return; }
+        if (Cmd_Stop.v) { EnterCState(CycleState.IDLE); return; } // Stop command aborts cycle, returns to IDLE
+
+        if (PnP_Busy?.tag) PnP_Busy.Set(true);
+
+        // --- Sub-State Machine (Executor) ---
+        stateTimer_E += Time.fixedDeltaTime;
+
+        switch (EState)
+        {
+            case ExecState.PREP:
+                Tick_EXEC_PREP();
+                break;
+            case ExecState.RUN:
+                Tick_EXEC_RUN();
+                break;
+            case ExecState.DWELL:
+                Tick_EXEC_DWELL();
+                break;
+            case ExecState.DONE:
+                Tick_EXEC_DONE();
+                break;
+        }
+    }
+
+    void Tick_FAULT()
+    {
+        SafeOutputs();
+        if (PnP_Busy?.tag) PnP_Busy.Set(false);
+        // wait for Reset
+    }
+
+    // ===================================================
+    // Sub-State (Executor) logic
+    // ===================================================
 
     void Tick_EXEC_PREP()
     {
-        if (!runEnable) { Fault("Run lost"); return; }
-        if (Cmd_Stop.v) return; // boundary-gated stop
+        if (stepIdx >= (activeProgram?.Length ?? 0))
+        {
+            EnterEState(ExecState.DONE); // Program finished
+            return;
+        }
 
-        if (stepIdx >= (Steps?.Length ?? 0)) { Enter(STATE.DONE); return; }
-
-        cur = Steps[stepIdx];
+        cur = activeProgram[stepIdx];
         cio = GetLinkIO(cur.Link);
-        if (cio == null) { Fault($"Link IO missing for {cur.Link}"); return; }
-
-        // NOTE: Do NOT set Grip here. We only set Pick at DWELL ENTRY.
+        if (cio == null) { Fault($"Link IO missing for {cur.Link} in step {stepIdx}"); return; }
 
         // Command move
         TrySetFloatOutput(cio.TargetSpeed_mmps, cur.TargetSpeed_mmps);
@@ -201,17 +300,15 @@ public class PickPlaceSequencer : MonoBehaviour
         PulseStartOnly(cio.StartDrive);
 
         // reset per-move timers
-        stateTimer = 0f;
         settleTimer = 0f;
 
         if (VerboseLogs)
-            Debug.Log($"[PnP] Step {stepIdx + 1}/{Steps.Length}: {cur.Link} -> Dest={cur.DestinationIndex}, v={cur.TargetSpeed_mmps} (Wait={cur.Wait}, Dwell={cur.Dwell_s}, Grip={cur.Grip})");
+            Debug.Log($"[PnP] Step {stepIdx + 1}/{activeProgram.Length}: {cur.Link} -> Dest={cur.DestinationIndex}, v={cur.TargetSpeed_mmps} (Wait={cur.Wait}, Dwell={cur.Dwell_s}, Grip={cur.Grip})");
 
-        Enter(STATE.EXEC_RUN);
+        EnterEState(ExecState.RUN);
     }
 
-    // Helper to enter dwell and perform "PickBeforeDwell" exactly on dwell entry
-    void EnterDwell()
+    void EnterDwellAndPick()
     {
         // Assert PICK exactly when we enter DWELL (post-position/settle)
         if (cur.Grip == GripAction.PickBeforeDwell)
@@ -221,15 +318,11 @@ public class PickPlaceSequencer : MonoBehaviour
             if (VerboseLogs) Debug.Log("[PnP] Grip_Pick=TRUE at DWELL entry.");
         }
 
-        Enter(STATE.DWELL);
+        EnterEState(ExecState.DWELL);
     }
 
     void Tick_EXEC_RUN()
     {
-        if (!runEnable) { Fault("Run lost"); return; }
-
-        stateTimer += Time.fixedDeltaTime;
-
         if (cur.Wait == WaitPolicy.WaitAtPosition)
         {
             if (cio.IsAtPosition.v)
@@ -237,29 +330,26 @@ public class PickPlaceSequencer : MonoBehaviour
                 settleTimer += Time.fixedDeltaTime;
                 if (settleTimer >= Mathf.Max(0, SettleAfterAtPos_s))
                 {
-                    EnterDwell(); // <-- pick at dwell entry
+                    EnterDwellAndPick(); // <-- pick at dwell entry
                     return;
                 }
             }
         }
         else
         {
-            EnterDwell(); // DwellOnly still asserts pick at dwell entry
+            // DwellOnly policy: move immediately to DWELL
+            EnterDwellAndPick();
             return;
         }
 
         // Watchdog
-        if (stateTimer > Mathf.Max(0.05f, cur.WD_Move_s))
+        if (stateTimer_E > Mathf.Max(0.05f, cur.WD_Move_s))
             Fault($"Move WD: {cur.Link} Dest={cur.DestinationIndex} atPos={cio.IsAtPosition.v} drv={cio.IsDriving.v}");
     }
 
-    void Tick_DWELL()
+    void Tick_EXEC_DWELL()
     {
-        if (!runEnable) { Fault("Run lost"); return; }
-
-        stateTimer += Time.fixedDeltaTime;
-
-        if (stateTimer >= Mathf.Max(0, cur.Dwell_s))
+        if (stateTimer_E >= Mathf.Max(0, cur.Dwell_s))
         {
             // Grip action AFTER dwell (place)
             if (cur.Grip == GripAction.PlaceAfterDwell)
@@ -269,30 +359,24 @@ public class PickPlaceSequencer : MonoBehaviour
                 if (VerboseLogs) Debug.Log("[PnP] Grip_Place=TRUE after dwell.");
             }
 
-            stepIdx++;
-            Enter(STATE.EXEC_PREP);
+            stepIdx++; // Move to next step
+            EnterEState(ExecState.PREP); // Go prepare next step
         }
     }
 
-    void Tick_DONE()
+    // This state is reached when the program (step list) is finished
+    void Tick_EXEC_DONE()
     {
-        if (PnP_Busy?.tag) PnP_Busy.Set(false);
+        Log("Program execution finished.");
 
-        // One-frame done pulse (if wired)
+        // One-frame done pulse
         if (PnP_Done?.tag)
         {
-            if (!PnP_Done.Get()) PnP_Done.Set(true);
-            else PnP_Done.Set(false);
+            PnP_Done.Set(true);
         }
 
-        // Back to RESET; RESET will auto-restart if Cmd_Start && SheetAtPick are HIGH.
-        Enter(STATE.RESET);
-    }
-
-    void Tick_FAULT()
-    {
-        SafeOutputs();
-        // wait for Reset
+        // Cycle complete, return to IDLE to look for the next job
+        EnterCState(CycleState.IDLE);
     }
 
     // ===================================================
@@ -345,24 +429,42 @@ public class PickPlaceSequencer : MonoBehaviour
         TrySetBoolOutput(Grip_Place, false);
     }
 
-    void Enter(STATE s)
+    void EnterCState(CycleState s)
     {
-        _prev = State; State = s;
-        stateTimer = 0f; settleTimer = 0f;
+        if (CState == s) return;
+        _prevCState = CState; CState = s;
+        stateTimer_C = 0f;
         if (VerboseLogs)
-            Debug.Log($"[PnP] STATE: {_prev} -> {State} @ {Time.time:0.000}s (step={stepIdx}/{(Steps != null ? Steps.Length : 0)})");
+            Debug.Log($"[PnP] CYCLE STATE: {_prevCState} -> {CState} @ {Time.time:0.000}s");
+    }
+
+    void EnterEState(ExecState s)
+    {
+        if (EState == s) return;
+        _prevEState = EState; EState = s;
+        stateTimer_E = 0f;
+        if (VerboseLogs)
+            Debug.Log($"[PnP] > Exec State: {_prevEState} -> {EState}");
     }
 
     void Fault(string why)
     {
-        Debug.LogWarning($"[PnP] FAULT: {why} @ {Time.time:0.000}s (state={State}, step={stepIdx})");
-        Enter(STATE.FAULT);
+        Debug.LogWarning($"[PnP] FAULT: {why} @ {Time.time:0.000}s (CState={CState}, EState={EState}, step={stepIdx})");
+        EnterCState(CycleState.FAULT);
+    }
+
+    void Log(string msg)
+    {
+        if (VerboseLogs) Debug.Log($"[PnP] {msg}");
     }
 
     void SampleInputs()
     {
         Cmd_Start.Sample(); Cmd_Stop.Sample(); Cmd_Reset.Sample(); EStop_OK.Sample();
         SheetAtPick.Sample();
+        StampedPartAtPress.Sample();
+        SheetOnPress.Sample();
+        PressIsBusy.Sample(); // <-- NEW
 
         LinkX.IsAtPosition.Sample(); LinkX.IsDriving.Sample(); LinkX.PositionIndex.Sample();
         LinkY.IsAtPosition.Sample(); LinkY.IsDriving.Sample(); LinkY.PositionIndex.Sample();
@@ -372,18 +474,15 @@ public class PickPlaceSequencer : MonoBehaviour
 
     void LogTick()
     {
-        string curDesc = (Steps != null && stepIdx < Steps.Length)
-            ? $"{Steps[stepIdx].Link}@{Steps[stepIdx].DestinationIndex} v={Steps[stepIdx].TargetSpeed_mmps} (Grip={Steps[stepIdx].Grip})"
+        string curDesc = (activeProgram != null && stepIdx < activeProgram.Length)
+            ? $"{activeProgram[stepIdx].Link}@{activeProgram[stepIdx].DestinationIndex}"
             : "-";
 
         Debug.Log(
-            $"[PnP {Time.time:0.000}] State={State} Busy={(PnP_Busy?.Get() ?? false)} Stop={Cmd_Stop.v} " +
-            $"EStopLatched={eStopLatched} step={stepIdx}/{(Steps != null ? Steps.Length : 0)} cur={curDesc} | " +
-            $"X(pos={LinkX.PositionIndex.v:0} at={LinkX.IsAtPosition.v} drv={LinkX.IsDriving.v}) " +
-            $"Y(pos={LinkY.PositionIndex.v:0} at={LinkY.IsAtPosition.v} drv={LinkY.IsDriving.v}) " +
-            $"Z(pos={LinkZ.PositionIndex.v:0} at={LinkZ.IsAtPosition.v} drv={LinkZ.IsDriving.v}) " +
-            $"R(pos={LinkR.PositionIndex.v:0} at={LinkR.IsAtPosition.v} drv={LinkR.IsDriving.v}) " +
-            $"SheetAtPick={SheetAtPick.v} " +
+            $"[PnP {Time.time:0.000}] CState={CState} | EState={EState} | Busy={(PnP_Busy?.Get() ?? false)} | " +
+            $"step={stepIdx}/{(activeProgram != null ? activeProgram.Length : 0)} ({curDesc}) | " +
+            $"TRIGGERS: SheetAtPick={SheetAtPick.v} | " + // <-- MODIFIED
+            $"PRESS: StampedAtPress={StampedPartAtPress.v} SheetOnPress={SheetOnPress.v} IsBusy={PressIsBusy.v} | " + // <-- MODIFIED
             $"Grip(Pick={(Grip_Pick?.Get() ?? false)}, Place={(Grip_Place?.Get() ?? false)})"
         );
     }

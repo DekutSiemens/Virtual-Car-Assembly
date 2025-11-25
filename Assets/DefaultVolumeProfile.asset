@@ -535,6 +535,7 @@ MonoBehaviour:
   - {fileID: -3943789183016795071}
   - {fileID: -3928644986933060449}
   - {fileID: -2106354666268670886}
+  - {fileID: 6160044826977156954}
 --- !u!114 &2296683219413583918
 MonoBehaviour:
   m_ObjectHideFlags: 3
@@ -635,6 +636,28 @@ MonoBehaviour:
   tint:
     m_OverrideState: 1
     m_Value: 0
+--- !u!114 &6160044826977156954
+MonoBehaviour:
+  m_ObjectHideFlags: 3
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 47f56eefbecd4f3458120b30b492a29d, type: 3}
+  m_Name: CustomVolumeComponent
+  m_EditorClassIdentifier: realvirtual.rendererfeatures::realvirtual.CustomVolumeComponent
+  active: 1
+  isActive:
+    m_OverrideState: 1
+    m_Value: 1
+  horizontalBlur:
+    m_OverrideState: 1
+    m_Value: 0.05
+  verticalBlur:
+    m_OverrideState: 1
+    m_Value: 0.05
 --- !u!114 &6263063787278638786
 MonoBehaviour:
   m_ObjectHideFlags: 3
