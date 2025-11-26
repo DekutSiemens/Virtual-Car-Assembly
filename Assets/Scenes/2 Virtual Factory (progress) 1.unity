@@ -4629,11 +4629,11 @@ RectTransform:
   - {fileID: 14886462}
   m_Father: {fileID: 696923932}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 296.36, y: -200.13}
+  m_AnchorMin: {x: 1, y: 0.5}
+  m_AnchorMax: {x: 1, y: 0.5}
+  m_AnchoredPosition: {x: -296.36, y: 0}
   m_SizeDelta: {x: 0, y: 0}
-  m_Pivot: {x: 0, y: 1}
+  m_Pivot: {x: 1, y: 0.5}
 --- !u!114 &115522577
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -9219,11 +9219,11 @@ MonoBehaviour:
   Autoconnected: 0
   UpdateEnable: 0
   ConnectionInfo:
+  - Behavior: {fileID: 1821513635}
+    ConnectionName: Forward
   - Behavior: {fileID: 1138250258}
     ConnectionName: Forward
   - Behavior: {fileID: 1941204519}
-    ConnectionName: Forward
-  - Behavior: {fileID: 1821513635}
     ConnectionName: Forward
   Status:
     Connected: 0
@@ -9415,11 +9415,11 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 115522576}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 2, y: -0}
+  m_AnchorMin: {x: 1, y: 0.5}
+  m_AnchorMax: {x: 1, y: 0.5}
+  m_AnchoredPosition: {x: -2, y: 0}
   m_SizeDelta: {x: 0, y: 0}
-  m_Pivot: {x: 0, y: 1}
+  m_Pivot: {x: 1, y: 0.5}
 --- !u!114 &242223497
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -9447,7 +9447,7 @@ MonoBehaviour:
     m_BestFit: 0
     m_MinSize: 10
     m_MaxSize: 40
-    m_Alignment: 0
+    m_Alignment: 5
     m_AlignByGeometry: 0
     m_RichText: 1
     m_HorizontalOverflow: 1
@@ -27094,11 +27094,11 @@ MonoBehaviour:
   Autoconnected: 0
   UpdateEnable: 0
   ConnectionInfo:
+  - Behavior: {fileID: 1821513635}
+    ConnectionName: Speed
   - Behavior: {fileID: 1138250258}
     ConnectionName: Speed
   - Behavior: {fileID: 1941204519}
-    ConnectionName: Speed
-  - Behavior: {fileID: 1821513635}
     ConnectionName: Speed
   Status:
     Connected: 0
@@ -28137,11 +28137,11 @@ MonoBehaviour:
   Autoconnected: 0
   UpdateEnable: 0
   ConnectionInfo:
+  - Behavior: {fileID: 1821513635}
+    ConnectionName: IsAtPosition
   - Behavior: {fileID: 1138250258}
     ConnectionName: IsAtPosition
   - Behavior: {fileID: 1941204519}
-    ConnectionName: IsAtPosition
-  - Behavior: {fileID: 1821513635}
     ConnectionName: IsAtPosition
   Status:
     Connected: 0
@@ -35484,9 +35484,9 @@ MonoBehaviour:
   fpsText: {fileID: 1332344116}
   statsText: {fileID: 0}
   showDebug: 1
-  showWarnings: 1
-  showErrors: 1
-  maxLines: 23
+  showWarnings: 0
+  showErrors: 0
+  maxLines: 10
   fpsUpdateInterval: 0.5
   statsUpdateInterval: 0.5
 --- !u!1001 &760964695
@@ -36387,11 +36387,11 @@ MonoBehaviour:
   Autoconnected: 0
   UpdateEnable: 0
   ConnectionInfo:
+  - Behavior: {fileID: 1821513635}
+    ConnectionName: IsAtSpeed
   - Behavior: {fileID: 1138250258}
     ConnectionName: IsAtSpeed
   - Behavior: {fileID: 1941204519}
-    ConnectionName: IsAtSpeed
-  - Behavior: {fileID: 1821513635}
     ConnectionName: IsAtSpeed
   Status:
     Connected: 0
@@ -40946,11 +40946,11 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 983299716}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 2, y: -0}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 2, y: 0}
   m_SizeDelta: {x: 0, y: 0}
-  m_Pivot: {x: 0, y: 1}
+  m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &883555746
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -40978,7 +40978,7 @@ MonoBehaviour:
     m_BestFit: 0
     m_MinSize: 10
     m_MaxSize: 40
-    m_Alignment: 0
+    m_Alignment: 4
     m_AlignByGeometry: 0
     m_RichText: 1
     m_HorizontalOverflow: 1
@@ -44545,11 +44545,11 @@ RectTransform:
   - {fileID: 769848560}
   m_Father: {fileID: 696923932}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 296.36, y: -200.13}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
-  m_Pivot: {x: 0, y: 1}
+  m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &983299717
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -44846,11 +44846,11 @@ MonoBehaviour:
   Autoconnected: 0
   UpdateEnable: 0
   ConnectionInfo:
+  - Behavior: {fileID: 1821513635}
+    ConnectionName: IsDriving
   - Behavior: {fileID: 1138250258}
     ConnectionName: IsDriving
   - Behavior: {fileID: 1941204519}
-    ConnectionName: IsDriving
-  - Behavior: {fileID: 1821513635}
     ConnectionName: IsDriving
   Status:
     Connected: 0
@@ -103666,7 +103666,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5173304180186242467, guid: 65be0002092749346993d900de9b29d4, type: 3}
       propertyPath: m_SizeDelta.x
-      value: 149.42
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 5173304180186242467, guid: 65be0002092749346993d900de9b29d4, type: 3}
       propertyPath: m_SizeDelta.y
@@ -120991,7 +120991,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3134654678544929506, guid: c660fc1f256b2824db49d4cf713a7cee, type: 3}
       propertyPath: m_SizeDelta.x
-      value: 161.76999
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3134654678544929506, guid: c660fc1f256b2824db49d4cf713a7cee, type: 3}
       propertyPath: m_SizeDelta.y
@@ -124229,7 +124229,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6885939941481631457, guid: d9267bae2f2dcde43a1a67a9cc099b8b, type: 3}
       propertyPath: m_SizeDelta.x
-      value: 153.69
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 6885939941481631457, guid: d9267bae2f2dcde43a1a67a9cc099b8b, type: 3}
       propertyPath: m_SizeDelta.y
