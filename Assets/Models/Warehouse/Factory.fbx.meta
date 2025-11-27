@@ -3,7 +3,67 @@ guid: d144937038bd9bc41a051c4f5d3438fd
 ModelImporter:
   serializedVersion: 24200
   internalIDToNameTable: []
-  externalObjects: {}
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Base.001
+    second: {fileID: 2100000, guid: 940115bade2a43b48b0197a27b8fda0b, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Blackpanes.001
+    second: {fileID: 2100000, guid: e4afacd38db9a32489bc262342b5ab1a, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Compound
+    second: {fileID: 2100000, guid: e015dbdb15a81d9409938c7be395448c, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Compound2
+    second: {fileID: 2100000, guid: 0e2c4dee9b469b348aa3c4b276b96926, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Floor
+    second: {fileID: 2100000, guid: 98c8f4155addab44987d2bfa12d1d1c9, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: GlassPane
+    second: {fileID: 2100000, guid: e79f7a994ea7f4b44960f9967304a271, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: GlassPane.001
+    second: {fileID: 2100000, guid: f36516bb598972c4f830d4f1455fd54c, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Inner walls
+    second: {fileID: 2100000, guid: de878da88637f034e9e54cdfe08fc8aa, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Pillars
+    second: {fileID: 2100000, guid: 328eaa670f456c94cb19234d0c761019, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Roof
+    second: {fileID: 2100000, guid: 5220c3d6f3c634c41bbe825e88df7020, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: WallLining
+    second: {fileID: 2100000, guid: 07e9a8f26b2495748914ce39a13ce257, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Walls
+    second: {fileID: 2100000, guid: 37fb1f563a4669942b7b1af6c92687f6, type: 2}
   materials:
     materialImportMode: 2
     materialName: 0
@@ -69,7 +129,7 @@ ModelImporter:
     secondaryUVMinObjectScale: 1
     secondaryUVPackMargin: 4
     useFileScale: 1
-    strictVertexDataChecks: 0
+    strictVertexDataChecks: 1
   tangentSpace:
     normalSmoothAngle: 60
     normalImportMode: 0
