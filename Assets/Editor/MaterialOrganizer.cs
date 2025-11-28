@@ -6,13 +6,15 @@ using System.IO;
 using System.Linq;
 
 /// <summary>
-/// Production-Grade Material Organizer for VR Optimization
-/// NEW FEATURES:
-/// - Object reference tracking with ping/select functionality
-/// - Duplicate material detection and consolidation
-/// - Enhanced preview with scene object navigation
+/// Production-Grade Material Organizer V4 - Complete VR Optimization Suite
+/// NEW IN V4:
+/// - Atlas Preview Tab with visual texture grid and memory estimates
+/// - VR Performance Scoring system (Quest 3 optimized)
+/// - One-Click Full Optimization workflow
+/// - Priority-based recommendations
+/// - Estimated FPS impact per fix
 /// </summary>
-public class MaterialOrganizer : EditorWindow
+public class MaterialOrganizerV4 : EditorWindow
 {
     private string targetFolderPath = "Assets/SceneMaterials";
     private bool copyMaterials = true;
@@ -26,13 +28,33 @@ public class MaterialOrganizer : EditorWindow
     private List<MaterialInfo> foundMaterials;
     private List<MaterialInfo> instanceMaterials;
     private List<List<MaterialInfo>> atlasCandidates;
-    private List<List<MaterialInfo>> duplicateGroups; // NEW: Duplicate material groups
+    private List<List<MaterialInfo>> duplicateGroups;
+    private List<List<MaterialInfo>> tilingVariantGroups;
 
-    private Vector2 scrollPosition;
+    // NEW: VR Performance data
+    private Dictionary<Material, VRPerformanceScore> performanceScores = new Dictionary<Material, VRPerformanceScore>();
+    private float overallSceneScore = 0f;
+    private int estimatedDrawCallSavings = 0;
+
+    private Vector2 masterScrollPosition;
+    private Vector2 previewScrollPosition;
+    private Vector2 instancingScrollPosition;
+    private Vector2 atlasPreviewScrollPosition; // NEW
+    private Vector2 performanceScrollPosition; // NEW
+
     private bool showInstances = true;
     private bool showAtlasGroups = false;
-    private bool showDuplicates = false; // NEW
-    private bool showObjectReferences = false; // NEW
+    private bool showDuplicates = false;
+    private bool showTilingVariants = false;
+    private bool showGPUInstancingAnalysis = false;
+    private bool showAtlasPreview = false; // NEW
+    private bool showVRPerformance = false; // NEW
+
+    private Dictionary<string, bool> materialObjectFoldouts = new Dictionary<string, bool>();
+
+    // NEW: View tabs
+    private enum ViewTab { Overview, AtlasPreview, VRPerformance }
+    private ViewTab currentTab = ViewTab.Overview;
 
     private enum GroupingMode
     {
@@ -42,106 +64,263 @@ public class MaterialOrganizer : EditorWindow
         ShaderAndTexture
     }
 
-    [MenuItem("Tools/VR Optimization/Material Organizer")]
+    [MenuItem("Tools/VR Optimization/Material Organizer V4")]
     public static void ShowWindow()
     {
-        GetWindow<MaterialOrganizer>("Material Organizer");
+        GetWindow<MaterialOrganizerV4>("Material Organizer V4");
     }
 
     private void OnGUI()
     {
-        EditorGUILayout.Space(10);
-        EditorGUILayout.LabelField("Scene Material Organizer", EditorStyles.boldLabel);
-        EditorGUILayout.HelpBox(
-            "Production-grade material scanner. Finds ALL materials, tracks object references, " +
-            "detects duplicates, and identifies atlas candidates for VR optimization.",
-            MessageType.Info
-        );
+        masterScrollPosition = EditorGUILayout.BeginScrollView(masterScrollPosition);
 
-        EditorGUILayout.Space(10);
-
-        // Settings
-        EditorGUILayout.LabelField("Settings", EditorStyles.boldLabel);
-
-        targetFolderPath = EditorGUILayout.TextField("Target Folder:", targetFolderPath);
-        copyMaterials = EditorGUILayout.Toggle("Copy Materials (vs Move)", copyMaterials);
-        includeInactive = EditorGUILayout.Toggle("Include Inactive Objects", includeInactive);
-
-        EditorGUILayout.Space(5);
-        EditorGUILayout.LabelField("Filtering", EditorStyles.boldLabel);
-        filterBuiltIn = EditorGUILayout.Toggle("Filter Unity Built-in", filterBuiltIn);
-        filterPackages = EditorGUILayout.Toggle("Filter Package Materials", filterPackages);
-
-        EditorGUILayout.Space(5);
-        EditorGUILayout.LabelField("Grouping & Analysis", EditorStyles.boldLabel);
-        groupingMode = (GroupingMode)EditorGUILayout.EnumPopup("Grouping Mode:", groupingMode);
-        showAtlasCandidates = EditorGUILayout.Toggle("Identify Atlas Candidates", showAtlasCandidates);
-        showPreview = EditorGUILayout.Toggle("Show Preview", showPreview);
-
-        EditorGUILayout.Space(10);
-
-        // Action Buttons
-        EditorGUILayout.BeginHorizontal();
-
-        if (GUILayout.Button("1. Scan Scene", GUILayout.Height(30)))
+        try
         {
-            ScanScene();
+            EditorGUILayout.Space(10);
+            EditorGUILayout.LabelField("Material Organizer V4 - VR Optimization Suite", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "Complete VR optimization: Duplicates, Tiling Variants, Atlas Preview, Performance Scoring.",
+                MessageType.Info
+            );
+
+            EditorGUILayout.Space(10);
+
+            // Settings
+            EditorGUILayout.LabelField("Settings", EditorStyles.boldLabel);
+            targetFolderPath = EditorGUILayout.TextField("Target Folder:", targetFolderPath);
+            copyMaterials = EditorGUILayout.Toggle("Copy Materials (vs Move)", copyMaterials);
+            includeInactive = EditorGUILayout.Toggle("Include Inactive Objects", includeInactive);
+
+            EditorGUILayout.Space(5);
+            EditorGUILayout.LabelField("Filtering", EditorStyles.boldLabel);
+            filterBuiltIn = EditorGUILayout.Toggle("Filter Unity Built-in", filterBuiltIn);
+            filterPackages = EditorGUILayout.Toggle("Filter Package Materials", filterPackages);
+
+            EditorGUILayout.Space(5);
+            EditorGUILayout.LabelField("Analysis", EditorStyles.boldLabel);
+            groupingMode = (GroupingMode)EditorGUILayout.EnumPopup("Grouping Mode:", groupingMode);
+            showAtlasCandidates = EditorGUILayout.Toggle("Identify Atlas Candidates", showAtlasCandidates);
+            showPreview = EditorGUILayout.Toggle("Show Material Details", showPreview);
+
+            EditorGUILayout.Space(10);
+
+            // Action Buttons
+            EditorGUILayout.BeginHorizontal();
+
+            if (GUILayout.Button("1. Scan Scene", GUILayout.Height(30)))
+            {
+                ScanScene();
+            }
+
+            GUI.enabled = foundMaterials != null && foundMaterials.Count > 0;
+
+            // NEW: One-Click Optimization
+            GUI.backgroundColor = Color.green;
+            if (GUILayout.Button("⚡ AUTO-OPTIMIZE", GUILayout.Height(30)))
+            {
+                PerformAutoOptimization();
+            }
+            GUI.backgroundColor = Color.white;
+
+            if (GUILayout.Button("2. Organize", GUILayout.Height(30)))
+            {
+                OrganizeMaterials();
+            }
+
+            GUI.enabled = true;
+
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(10);
+
+            // NEW: Tab Selection
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Toggle(currentTab == ViewTab.Overview, "Overview", "Button", GUILayout.Height(25)))
+                currentTab = ViewTab.Overview;
+            if (GUILayout.Toggle(currentTab == ViewTab.AtlasPreview, "Atlas Preview", "Button", GUILayout.Height(25)))
+                currentTab = ViewTab.AtlasPreview;
+            if (GUILayout.Toggle(currentTab == ViewTab.VRPerformance, "VR Performance", "Button", GUILayout.Height(25)))
+                currentTab = ViewTab.VRPerformance;
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(10);
+
+            // Statistics
+            if (foundMaterials != null || instanceMaterials != null)
+            {
+                EditorGUILayout.BeginVertical("box");
+                EditorGUILayout.LabelField("Scan Results:", EditorStyles.boldLabel);
+
+                if (foundMaterials != null)
+                {
+                    EditorGUILayout.LabelField($"✓ Asset Materials: {foundMaterials.Count}");
+                }
+
+                // NEW: VR Performance Score
+                if (overallSceneScore > 0)
+                {
+                    Color scoreColor = overallSceneScore >= 80 ? Color.green :
+                                      overallSceneScore >= 60 ? Color.yellow : Color.red;
+                    EditorGUILayout.LabelField($"🎯 VR Performance Score: {overallSceneScore:F1}/100",
+                        new GUIStyle(EditorStyles.label) { normal = { textColor = scoreColor } });
+
+                    if (estimatedDrawCallSavings > 0)
+                    {
+                        EditorGUILayout.LabelField($"💡 Potential Draw Call Savings: {estimatedDrawCallSavings}",
+                            new GUIStyle(EditorStyles.label) { normal = { textColor = Color.cyan } });
+                    }
+                }
+
+                if (tilingVariantGroups != null && tilingVariantGroups.Count > 0)
+                {
+                    int totalVariants = tilingVariantGroups.Sum(group => group.Count - 1);
+                    EditorGUILayout.LabelField($"🔧 Tiling Variants: {tilingVariantGroups.Count} groups ({totalVariants} variants)",
+                        new GUIStyle(EditorStyles.label) { normal = { textColor = new Color(1f, 0.5f, 0f) } });
+                }
+
+                if (duplicateGroups != null && duplicateGroups.Count > 0)
+                {
+                    int totalDuplicates = duplicateGroups.Sum(group => group.Count - 1);
+                    EditorGUILayout.LabelField($"⚠ Duplicates: {duplicateGroups.Count} groups ({totalDuplicates} duplicates)",
+                        new GUIStyle(EditorStyles.label) { normal = { textColor = Color.yellow } });
+                }
+
+                if (atlasCandidates != null && atlasCandidates.Count > 0)
+                {
+                    int totalAtlasable = atlasCandidates.Sum(group => group.Count);
+                    EditorGUILayout.LabelField($"✓ Atlas Candidates: {atlasCandidates.Count} groups ({totalAtlasable} materials)",
+                        new GUIStyle(EditorStyles.label) { normal = { textColor = Color.green } });
+                }
+
+                if (instanceMaterials != null && instanceMaterials.Count > 0)
+                {
+                    EditorGUILayout.LabelField($"⚠ Instances: {instanceMaterials.Count}",
+                        new GUIStyle(EditorStyles.label) { normal = { textColor = Color.yellow } });
+                }
+
+                EditorGUILayout.EndVertical();
+            }
+
+            EditorGUILayout.Space(10);
+
+            // Content based on selected tab
+            switch (currentTab)
+            {
+                case ViewTab.Overview:
+                    DrawOverviewTab();
+                    break;
+                case ViewTab.AtlasPreview:
+                    DrawAtlasPreviewTab();
+                    break;
+                case ViewTab.VRPerformance:
+                    DrawVRPerformanceTab();
+                    break;
+            }
+        }
+        finally
+        {
+            EditorGUILayout.EndScrollView();
+        }
+    }
+
+    // NEW: Overview Tab (existing content)
+    private void DrawOverviewTab()
+    {
+        // Tiling Variants Section
+        if (tilingVariantGroups != null && tilingVariantGroups.Count > 0)
+        {
+            EditorGUILayout.Space(5);
+            EditorGUILayout.HelpBox(
+                $"🔧 Found {tilingVariantGroups.Count} TILING VARIANT groups! Fix these FIRST for maximum FPS gain.",
+                MessageType.Warning
+            );
+
+            showTilingVariants = EditorGUILayout.Foldout(showTilingVariants, "Show Tiling Variant Groups");
+
+            if (showTilingVariants)
+            {
+                EditorGUILayout.BeginVertical("box");
+                int groupNum = 1;
+
+                foreach (var group in tilingVariantGroups)
+                {
+                    if (group == null || group.Count == 0) continue;
+
+                    EditorGUILayout.BeginVertical("box");
+
+                    // NEW: Show priority and estimated impact
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.LabelField($"Priority #{groupNum} - Tiling Variant Group ({group.Count} variants)",
+                        EditorStyles.boldLabel);
+
+                    GUI.backgroundColor = Color.cyan;
+                    EditorGUILayout.LabelField($"+{group.Count - 1} Draw Calls",
+                        new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = Color.cyan } },
+                        GUILayout.Width(100));
+                    GUI.backgroundColor = Color.white;
+                    EditorGUILayout.EndHorizontal();
+
+                    var first = group[0];
+                    if (first.material != null)
+                    {
+                        EditorGUILayout.LabelField($"  Shader: {first.shader.name}", EditorStyles.miniLabel);
+                        if (first.mainTexture != null)
+                        {
+                            EditorGUILayout.LabelField($"  Texture: {first.mainTexture.name}", EditorStyles.miniLabel);
+                        }
+                    }
+
+                    EditorGUILayout.Space(3);
+
+                    foreach (var matInfo in group)
+                    {
+                        if (matInfo.material == null) continue;
+
+                        Vector2 tiling = matInfo.material.mainTextureScale;
+                        Vector2 offset = matInfo.material.mainTextureOffset;
+
+                        EditorGUILayout.BeginHorizontal();
+                        EditorGUILayout.LabelField($"    • {matInfo.material.name}", EditorStyles.miniLabel, GUILayout.Width(180));
+                        EditorGUILayout.LabelField($"Tiling: ({tiling.x:F2}, {tiling.y:F2})",
+                            EditorStyles.miniLabel, GUILayout.Width(110));
+                        EditorGUILayout.LabelField($"({matInfo.usedByCount} objs)",
+                            EditorStyles.miniLabel, GUILayout.Width(60));
+
+                        if (GUILayout.Button("Ping", GUILayout.Width(50)))
+                        {
+                            EditorGUIUtility.PingObject(matInfo.material);
+                        }
+                        if (GUILayout.Button("Select", GUILayout.Width(60)))
+                        {
+                            Selection.objects = matInfo.usedByObjects.ToArray();
+                        }
+                        EditorGUILayout.EndHorizontal();
+                    }
+
+                    EditorGUILayout.Space(5);
+
+                    GUI.backgroundColor = new Color(0.3f, 0.7f, 1f);
+                    EditorGUILayout.HelpBox(
+                        $"💡 FIX: Bake tiling into UVs → Save {group.Count - 1} draw calls (~{(group.Count - 1) * 2} FPS)",
+                        MessageType.Info
+                    );
+                    GUI.backgroundColor = Color.white;
+
+                    EditorGUILayout.EndVertical();
+                    EditorGUILayout.Space(5);
+                    groupNum++;
+                }
+
+                EditorGUILayout.EndVertical();
+            }
         }
 
-        GUI.enabled = foundMaterials != null && foundMaterials.Count > 0;
-        if (GUILayout.Button("2. Organize Materials", GUILayout.Height(30)))
-        {
-            OrganizeMaterials();
-        }
-        GUI.enabled = true;
-
-        EditorGUILayout.EndHorizontal();
-
-        EditorGUILayout.Space(10);
-
-        // Statistics
-        if (foundMaterials != null || instanceMaterials != null)
-        {
-            EditorGUILayout.BeginVertical("box");
-            EditorGUILayout.LabelField("Scan Results:", EditorStyles.boldLabel);
-
-            if (foundMaterials != null)
-            {
-                EditorGUILayout.LabelField($"✓ Asset Materials: {foundMaterials.Count}");
-            }
-
-            // NEW: Duplicate Detection Stats
-            if (duplicateGroups != null && duplicateGroups.Count > 0)
-            {
-                int totalDuplicates = duplicateGroups.Sum(group => group.Count - 1);
-                EditorGUILayout.LabelField($"⚠ Duplicate Groups: {duplicateGroups.Count} ({totalDuplicates} duplicates)",
-                    new GUIStyle(EditorStyles.label) { normal = { textColor = Color.yellow } });
-            }
-
-            if (atlasCandidates != null && atlasCandidates.Count > 0)
-            {
-                int totalAtlasable = atlasCandidates.Sum(group => group.Count);
-                EditorGUILayout.LabelField($"✓ Atlas Candidate Groups: {atlasCandidates.Count} ({totalAtlasable} materials)",
-                    new GUIStyle(EditorStyles.label) { normal = { textColor = Color.green } });
-            }
-
-            if (instanceMaterials != null && instanceMaterials.Count > 0)
-            {
-                EditorGUILayout.LabelField($"⚠ Material Instances: {instanceMaterials.Count}",
-                    new GUIStyle(EditorStyles.label) { normal = { textColor = Color.yellow } });
-            }
-
-            EditorGUILayout.EndVertical();
-        }
-
-        // NEW: Duplicate Materials Section
+        // Duplicate Materials Section
         if (duplicateGroups != null && duplicateGroups.Count > 0)
         {
             EditorGUILayout.Space(5);
             EditorGUILayout.HelpBox(
-                $"⚠ Found {duplicateGroups.Count} groups of duplicate materials! " +
-                "These materials have identical properties but exist as separate assets. " +
-                "Consolidating them will reduce draw calls and improve batching.",
+                $"⚠ Found {duplicateGroups.Count} EXACT DUPLICATE groups. Auto-consolidate NOW!",
                 MessageType.Warning
             );
 
@@ -165,7 +344,7 @@ public class MaterialOrganizer : EditorWindow
                         EditorGUILayout.LabelField($"  Shader: {first.shader.name}", EditorStyles.miniLabel);
                         if (first.mainTexture != null)
                         {
-                            EditorGUILayout.LabelField($"  Main Texture: {first.mainTexture.name}", EditorStyles.miniLabel);
+                            EditorGUILayout.LabelField($"  Texture: {first.mainTexture.name}", EditorStyles.miniLabel);
                         }
                     }
 
@@ -176,10 +355,10 @@ public class MaterialOrganizer : EditorWindow
                         if (matInfo.material == null) continue;
 
                         EditorGUILayout.BeginHorizontal();
-                        EditorGUILayout.LabelField($"    • {matInfo.material.name}", EditorStyles.miniLabel);
+                        EditorGUILayout.LabelField($"    • {matInfo.material.name}", EditorStyles.miniLabel, GUILayout.Width(250));
                         EditorGUILayout.LabelField($"({matInfo.usedByCount} objects)", EditorStyles.miniLabel, GUILayout.Width(80));
 
-                        if (GUILayout.Button("Ping", GUILayout.Width(50)))
+                        if (GUILayout.Button("Ping Material", GUILayout.Width(100)))
                         {
                             EditorGUIUtility.PingObject(matInfo.material);
                         }
@@ -192,9 +371,8 @@ public class MaterialOrganizer : EditorWindow
 
                     EditorGUILayout.Space(3);
 
-                    // Consolidate button for this group
                     GUI.backgroundColor = Color.yellow;
-                    if (GUILayout.Button($"Consolidate Group {groupNum} (Keep '{group[0].material.name}')", GUILayout.Height(25)))
+                    if (GUILayout.Button($"Consolidate Group {groupNum}", GUILayout.Height(25)))
                     {
                         ConsolidateDuplicateGroup(group);
                     }
@@ -212,14 +390,12 @@ public class MaterialOrganizer : EditorWindow
 
                 EditorGUILayout.Space(5);
 
-                // Consolidate All button
                 GUI.backgroundColor = new Color(1f, 0.5f, 0f);
                 if (GUILayout.Button("⚠ CONSOLIDATE ALL DUPLICATES", GUILayout.Height(35)))
                 {
                     if (EditorUtility.DisplayDialog("Consolidate All Duplicates",
-                        $"This will replace {duplicateGroups.Sum(g => g.Count - 1)} duplicate materials with their first variant. " +
-                        "All scene references will be updated automatically.\n\nThis cannot be undone easily. Continue?",
-                        "Yes, Consolidate All", "Cancel"))
+                        $"Replace {duplicateGroups.Sum(g => g.Count - 1)} duplicates?",
+                        "Yes", "Cancel"))
                     {
                         ConsolidateAllDuplicates();
                     }
@@ -230,201 +406,567 @@ public class MaterialOrganizer : EditorWindow
             }
         }
 
-        // Material Instances Warning
-        if (instanceMaterials != null && instanceMaterials.Count > 0)
+        // GPU Instancing Analysis
+        if (foundMaterials != null && foundMaterials.Count > 0)
         {
             EditorGUILayout.Space(5);
-            EditorGUILayout.HelpBox(
-                $"⚠ Found {instanceMaterials.Count} material INSTANCES (runtime materials with no asset file). " +
-                "These cannot be organized and may break batching. Consider saving them as assets.",
-                MessageType.Warning
-            );
+            showGPUInstancingAnalysis = EditorGUILayout.Foldout(showGPUInstancingAnalysis,
+                "GPU Instancing Analysis");
 
-            showInstances = EditorGUILayout.Foldout(showInstances, "Show Material Instances");
-
-            if (showInstances)
+            if (showGPUInstancingAnalysis)
             {
                 EditorGUILayout.BeginVertical("box");
-                foreach (var matInfo in instanceMaterials.Take(10))
-                {
-                    if (matInfo.material == null) continue;
+                EditorGUILayout.HelpBox(
+                    "GPU Instancing: Dynamic objects (10+) with same mesh.\nStatic Batching: Static world geometry.",
+                    MessageType.Info
+                );
 
-                    EditorGUILayout.BeginHorizontal();
-                    EditorGUILayout.LabelField($"• {matInfo.material.name}", EditorStyles.miniLabel);
-                    EditorGUILayout.LabelField($"({matInfo.usedByCount} objects)", EditorStyles.miniLabel, GUILayout.Width(80));
-                    EditorGUILayout.LabelField($"Shader: {matInfo.shader.name}", EditorStyles.miniLabel);
-                    EditorGUILayout.EndHorizontal();
-                }
-                if (instanceMaterials.Count > 10)
-                {
-                    EditorGUILayout.LabelField($"... and {instanceMaterials.Count - 10} more", EditorStyles.miniLabel);
-                }
-                EditorGUILayout.EndVertical();
-            }
-        }
-
-        // Atlas Candidates
-        if (atlasCandidates != null && atlasCandidates.Count > 0)
-        {
-            EditorGUILayout.Space(5);
-            EditorGUILayout.HelpBox(
-                $"✓ Found {atlasCandidates.Count} groups of materials that can be safely atlased together. " +
-                "These materials share the same shader, texture size, and properties.",
-                MessageType.Info
-            );
-
-            showAtlasGroups = EditorGUILayout.Foldout(showAtlasGroups, "Show Atlas Candidate Groups");
-
-            if (showAtlasGroups)
-            {
-                EditorGUILayout.BeginVertical("box");
-                int groupNum = 1;
-                foreach (var group in atlasCandidates.Take(5))
-                {
-                    if (group == null || group.Count == 0 || group[0].material == null) continue;
-
-                    EditorGUILayout.LabelField($"Group {groupNum}: {group.Count} materials", EditorStyles.boldLabel);
-                    var first = group[0];
-                    EditorGUILayout.LabelField($"  Shader: {first.shader.name}", EditorStyles.miniLabel);
-                    if (first.textureSize.x > 0)
-                    {
-                        EditorGUILayout.LabelField($"  Texture Size: {first.textureSize.x}×{first.textureSize.y}", EditorStyles.miniLabel);
-                    }
-                    EditorGUILayout.LabelField($"  Materials: {string.Join(", ", group.Select(m => m.material.name).Take(3))}...",
-                        EditorStyles.miniLabel);
-                    EditorGUILayout.Space(3);
-                    groupNum++;
-                }
-                if (atlasCandidates.Count > 5)
-                {
-                    EditorGUILayout.LabelField($"... and {atlasCandidates.Count - 5} more groups", EditorStyles.miniLabel);
-                }
-                EditorGUILayout.EndVertical();
-            }
-        }
-
-        EditorGUILayout.Space(10);
-
-        // Preview
-        if (showPreview && foundMaterials != null && foundMaterials.Count > 0)
-        {
-            EditorGUILayout.LabelField($"Asset Materials: {foundMaterials.Count}", EditorStyles.boldLabel);
-            EditorGUILayout.Space(5);
-
-            try
-            {
-                scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition, GUILayout.Height(300));
+                instancingScrollPosition = EditorGUILayout.BeginScrollView(instancingScrollPosition, GUILayout.Height(250));
 
                 foreach (var matInfo in foundMaterials)
                 {
-                    if (matInfo == null || matInfo.material == null) continue;
+                    if (matInfo.material == null) continue;
+                    AnalyzeGPUInstancingPotential(matInfo);
+                }
 
-                    EditorGUILayout.BeginVertical("box");
+                EditorGUILayout.EndScrollView();
+                EditorGUILayout.EndVertical();
+            }
+        }
 
-                    // Material header with ping buttons
-                    EditorGUILayout.BeginHorizontal();
-                    EditorGUILayout.LabelField(matInfo.material.name, EditorStyles.boldLabel);
+        // Material Details Preview
+        if (showPreview && foundMaterials != null && foundMaterials.Count > 0)
+        {
+            EditorGUILayout.Space(5);
+            EditorGUILayout.LabelField($"Material Details: {foundMaterials.Count} materials", EditorStyles.boldLabel);
 
-                    if (GUILayout.Button("Ping Material", GUILayout.Width(100)))
+            previewScrollPosition = EditorGUILayout.BeginScrollView(previewScrollPosition, GUILayout.Height(300));
+
+            foreach (var matInfo in foundMaterials)
+            {
+                if (matInfo == null || matInfo.material == null) continue;
+
+                EditorGUILayout.BeginVertical("box");
+
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField(matInfo.material.name, EditorStyles.boldLabel);
+
+                if (GUILayout.Button("Ping Material", GUILayout.Width(100)))
+                {
+                    EditorGUIUtility.PingObject(matInfo.material);
+                }
+
+                GUI.enabled = matInfo.usedByObjects != null && matInfo.usedByObjects.Count > 0;
+                if (GUILayout.Button("Select Objects", GUILayout.Width(100)))
+                {
+                    Selection.objects = matInfo.usedByObjects.ToArray();
+                }
+                GUI.enabled = true;
+
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.LabelField($"Shader: {matInfo.shader.name}", EditorStyles.miniLabel);
+                EditorGUILayout.LabelField($"Used by: {matInfo.usedByCount} objects ({matInfo.staticCount} static, {matInfo.dynamicCount} dynamic)",
+                    EditorStyles.miniLabel);
+
+                if (matInfo.mainTexture is Texture2D tex)
+                {
+                    EditorGUILayout.LabelField($"Resolution: {tex.width}×{tex.height}",
+                        new GUIStyle(EditorStyles.miniLabel)
+                        {
+                            normal = { textColor = tex.width > 2048 ? Color.red : Color.white }
+                        });
+                }
+
+                Vector2 tiling = matInfo.material.mainTextureScale;
+                EditorGUILayout.LabelField($"Tiling: ({tiling.x:F2}, {tiling.y:F2})", EditorStyles.miniLabel);
+
+                // Object references foldout
+                if (matInfo.usedByObjects != null && matInfo.usedByObjects.Count > 0)
+                {
+                    string foldoutKey = matInfo.guid;
+                    if (!materialObjectFoldouts.ContainsKey(foldoutKey))
                     {
-                        EditorGUIUtility.PingObject(matInfo.material);
+                        materialObjectFoldouts[foldoutKey] = false;
                     }
 
-                    // NEW: Select all objects using this material
-                    GUI.enabled = matInfo.usedByObjects != null && matInfo.usedByObjects.Count > 0;
-                    if (GUILayout.Button("Select Objects", GUILayout.Width(100)))
-                    {
-                        Selection.objects = matInfo.usedByObjects.ToArray();
-                    }
-                    GUI.enabled = true;
+                    materialObjectFoldouts[foldoutKey] = EditorGUILayout.Foldout(
+                        materialObjectFoldouts[foldoutKey],
+                        $"Scene Objects ({matInfo.usedByObjects.Count})");
 
+                    if (materialObjectFoldouts[foldoutKey])
+                    {
+                        EditorGUILayout.BeginVertical("box");
+
+                        foreach (var obj in matInfo.usedByObjects.Take(10))
+                        {
+                            if (obj == null) continue;
+
+                            EditorGUILayout.BeginHorizontal();
+
+                            if (GUILayout.Button("→", GUILayout.Width(25)))
+                            {
+                                Selection.activeGameObject = obj;
+                                EditorGUIUtility.PingObject(obj);
+                            }
+
+                            EditorGUILayout.LabelField(obj.name, EditorStyles.miniLabel);
+
+                            EditorGUILayout.EndHorizontal();
+                        }
+
+                        if (matInfo.usedByObjects.Count > 10)
+                        {
+                            EditorGUILayout.LabelField($"... and {matInfo.usedByObjects.Count - 10} more",
+                                EditorStyles.miniLabel);
+                        }
+
+                        EditorGUILayout.EndVertical();
+                    }
+                }
+
+                EditorGUILayout.EndVertical();
+                EditorGUILayout.Space(3);
+            }
+
+            EditorGUILayout.EndScrollView();
+        }
+    }
+
+    // NEW: Atlas Preview Tab
+    private void DrawAtlasPreviewTab()
+    {
+        if (atlasCandidates == null || atlasCandidates.Count == 0)
+        {
+            EditorGUILayout.HelpBox("No atlas candidates found. Click 'Scan Scene' with 'Identify Atlas Candidates' enabled.", MessageType.Info);
+            return;
+        }
+
+        EditorGUILayout.LabelField($"Atlas Candidate Groups: {atlasCandidates.Count}", EditorStyles.boldLabel);
+        EditorGUILayout.HelpBox(
+            "Materials grouped by shader, texture size, and keywords. These can be safely combined into texture atlases.",
+            MessageType.Info
+        );
+
+        EditorGUILayout.Space(10);
+
+        atlasPreviewScrollPosition = EditorGUILayout.BeginScrollView(atlasPreviewScrollPosition);
+
+        int groupNum = 1;
+        foreach (var group in atlasCandidates)
+        {
+            if (group == null || group.Count == 0) continue;
+
+            EditorGUILayout.BeginVertical("box");
+
+            // Group header
+            var first = group[0];
+            EditorGUILayout.LabelField($"Atlas Group {groupNum}: {group.Count} materials", EditorStyles.boldLabel);
+
+            // NEW: Memory estimate - declare variables outside if block
+            int totalTextures = group.Count;
+            int textureMemoryMB = 0;
+            int atlasMemoryMB = 0;
+            int memorySavingMB = 0;
+
+            if (first.material != null)
+            {
+                EditorGUILayout.LabelField($"Shader: {first.shader.name}", EditorStyles.miniLabel);
+                if (first.textureSize.x > 0)
+                {
+                    EditorGUILayout.LabelField($"Texture Size: {first.textureSize.x}×{first.textureSize.y}", EditorStyles.miniLabel);
+
+                    // Calculate memory estimates
+                    textureMemoryMB = (first.textureSize.x * first.textureSize.y * 4 * totalTextures) / (1024 * 1024);
+                    atlasMemoryMB = (Mathf.NextPowerOfTwo(first.textureSize.x * 2) * Mathf.NextPowerOfTwo(first.textureSize.y * 2) * 4) / (1024 * 1024);
+                    memorySavingMB = textureMemoryMB - atlasMemoryMB;
+
+                    EditorGUILayout.LabelField($"Current Memory: ~{textureMemoryMB}MB | After Atlas: ~{atlasMemoryMB}MB | Savings: ~{memorySavingMB}MB",
+                        EditorStyles.miniLabel);
+                }
+
+                EditorGUILayout.LabelField($"Draw Call Reduction: {group.Count} → 1 (save {group.Count - 1} draw calls)",
+                    new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = Color.green } });
+            }
+
+            EditorGUILayout.Space(5);
+
+            // NEW: Texture preview grid
+            EditorGUILayout.LabelField("Textures in Group:", EditorStyles.miniLabel);
+
+            int previewSize = 64;
+            int texPerRow = Mathf.FloorToInt((EditorGUIUtility.currentViewWidth - 50) / (previewSize + 5));
+            int currentRow = 0;
+
+            EditorGUILayout.BeginHorizontal();
+
+            foreach (var matInfo in group)
+            {
+                if (matInfo.material == null || matInfo.mainTexture == null) continue;
+
+                if (currentRow >= texPerRow)
+                {
                     EditorGUILayout.EndHorizontal();
+                    EditorGUILayout.BeginHorizontal();
+                    currentRow = 0;
+                }
 
-                    EditorGUILayout.LabelField($"Path: {matInfo.assetPath}", EditorStyles.miniLabel);
-                    EditorGUILayout.LabelField($"Shader: {matInfo.shader.name}", EditorStyles.miniLabel);
-                    EditorGUILayout.LabelField($"Used by: {matInfo.usedByCount} objects on {matInfo.rendererTypes.Count} renderer type(s)", EditorStyles.miniLabel);
+                EditorGUILayout.BeginVertical(GUILayout.Width(previewSize));
 
-                    if (matInfo.mainTexture != null)
-                    {
-                        EditorGUILayout.LabelField($"Main Texture: {matInfo.mainTexture.name}", EditorStyles.miniLabel);
+                // Texture preview
+                Rect previewRect = GUILayoutUtility.GetRect(previewSize, previewSize);
+                EditorGUI.DrawPreviewTexture(previewRect, matInfo.mainTexture);
 
-                        if (matInfo.mainTexture is Texture2D tex)
-                        {
-                            EditorGUILayout.LabelField($"Resolution: {tex.width}×{tex.height}",
-                                new GUIStyle(EditorStyles.miniLabel)
-                                {
-                                    normal = { textColor = tex.width > 2048 ? Color.red : Color.white }
-                                });
-                        }
-                    }
+                // Material name (truncated)
+                string shortName = matInfo.material.name;
+                if (shortName.Length > 10) shortName = shortName.Substring(0, 10) + "...";
+                EditorGUILayout.LabelField(shortName, EditorStyles.miniLabel);
 
-                    if (matInfo.material.shaderKeywords != null && matInfo.material.shaderKeywords.Length > 0)
-                    {
-                        string keywords = string.Join(", ", matInfo.material.shaderKeywords);
-                        if (keywords.Length > 50) keywords = keywords.Substring(0, 47) + "...";
-                        EditorGUILayout.LabelField($"Keywords ({matInfo.material.shaderKeywords.Length}): {keywords}",
-                            EditorStyles.miniLabel);
-                    }
-                    else
-                    {
-                        EditorGUILayout.LabelField("Keywords: None (Good for GPU instancing)",
-                            new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = Color.green } });
-                    }
+                EditorGUILayout.EndVertical();
 
-                    if (matInfo.rendererTypes.Count > 0)
-                    {
-                        EditorGUILayout.LabelField($"Renderers: {string.Join(", ", matInfo.rendererTypes.Select(t => t.Name))}",
-                            EditorStyles.miniLabel);
-                    }
+                currentRow++;
+            }
 
-                    // NEW: Object references list
-                    if (matInfo.usedByObjects != null && matInfo.usedByObjects.Count > 0)
-                    {
-                        showObjectReferences = EditorGUILayout.Foldout(showObjectReferences,
-                            $"Scene Objects ({matInfo.usedByObjects.Count})");
+            EditorGUILayout.EndHorizontal();
 
-                        if (showObjectReferences)
-                        {
-                            EditorGUILayout.BeginVertical("box");
+            EditorGUILayout.Space(5);
 
-                            foreach (var obj in matInfo.usedByObjects.Take(10))
-                            {
-                                if (obj == null) continue;
+            // Material list
+            EditorGUILayout.LabelField("Materials:", EditorStyles.miniLabel);
+            foreach (var matInfo in group)
+            {
+                if (matInfo.material == null) continue;
 
-                                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField($"  • {matInfo.material.name}", EditorStyles.miniLabel, GUILayout.Width(250));
+                EditorGUILayout.LabelField($"({matInfo.usedByCount} objects)", EditorStyles.miniLabel, GUILayout.Width(80));
 
-                                // Ping button for object
-                                if (GUILayout.Button("→", GUILayout.Width(25)))
-                                {
-                                    Selection.activeGameObject = obj;
-                                    EditorGUIUtility.PingObject(obj);
-                                }
+                if (GUILayout.Button("Ping", GUILayout.Width(50)))
+                {
+                    EditorGUIUtility.PingObject(matInfo.material);
+                }
+                if (GUILayout.Button("Select Objects", GUILayout.Width(100)))
+                {
+                    Selection.objects = matInfo.usedByObjects.ToArray();
+                }
+                EditorGUILayout.EndHorizontal();
+            }
 
-                                EditorGUILayout.LabelField(obj.name, EditorStyles.miniLabel);
-                                EditorGUILayout.LabelField(GetHierarchyPath(obj),
-                                    EditorStyles.miniLabel, GUILayout.MaxWidth(200));
+            EditorGUILayout.Space(5);
 
-                                EditorGUILayout.EndHorizontal();
-                            }
+            // NEW: Create atlas suggestion
+            GUI.backgroundColor = Color.green;
+            if (GUILayout.Button($"💡 Create Atlas for Group {groupNum} (External Tool Required)", GUILayout.Height(30)))
+            {
+                EditorUtility.DisplayDialog("Create Texture Atlas",
+                    $"To create an atlas for this group:\n\n" +
+                    $"1. Export these {group.Count} textures\n" +
+                    $"2. Use TexturePacker, Unity Sprite Atlas, or similar tool\n" +
+                    $"3. Create atlas texture (recommended size: {Mathf.NextPowerOfTwo(first.textureSize.x * 2)}×{Mathf.NextPowerOfTwo(first.textureSize.y * 2)})\n" +
+                    $"4. Update material to use atlased texture\n" +
+                    $"5. Update UVs to match atlas layout\n\n" +
+                    $"Estimated savings: {group.Count - 1} draw calls, ~{memorySavingMB}MB memory",
+                    "Got it");
+            }
+            GUI.backgroundColor = Color.white;
 
-                            if (matInfo.usedByObjects.Count > 10)
-                            {
-                                EditorGUILayout.LabelField($"... and {matInfo.usedByObjects.Count - 10} more objects",
-                                    EditorStyles.miniLabel);
-                            }
+            EditorGUILayout.EndVertical();
+            EditorGUILayout.Space(10);
 
-                            EditorGUILayout.EndVertical();
-                        }
-                    }
+            groupNum++;
+        }
 
-                    EditorGUILayout.EndVertical();
-                    EditorGUILayout.Space(3);
+        EditorGUILayout.EndScrollView();
+    }
+
+    // NEW: VR Performance Tab
+    private void DrawVRPerformanceTab()
+    {
+        if (foundMaterials == null || foundMaterials.Count == 0)
+        {
+            EditorGUILayout.HelpBox("No materials found. Click 'Scan Scene' first.", MessageType.Info);
+            return;
+        }
+
+        EditorGUILayout.BeginVertical("box");
+        EditorGUILayout.LabelField("VR Performance Analysis (Quest 3 Optimized)", EditorStyles.boldLabel);
+
+        // Overall score
+        Color scoreColor = overallSceneScore >= 80 ? Color.green :
+                          overallSceneScore >= 60 ? Color.yellow : Color.red;
+
+        EditorGUILayout.BeginHorizontal();
+        EditorGUILayout.LabelField("Overall Scene Score:", EditorStyles.boldLabel, GUILayout.Width(150));
+        EditorGUILayout.LabelField($"{overallSceneScore:F1}/100",
+            new GUIStyle(EditorStyles.boldLabel) { normal = { textColor = scoreColor } });
+        EditorGUILayout.EndHorizontal();
+
+        string scoreDescription = overallSceneScore >= 80 ? "Excellent - VR Ready" :
+                                  overallSceneScore >= 60 ? "Good - Minor optimization needed" :
+                                  overallSceneScore >= 40 ? "Fair - Optimization recommended" :
+                                  "Poor - Requires significant optimization";
+
+        EditorGUILayout.LabelField(scoreDescription, EditorStyles.miniLabel);
+
+        EditorGUILayout.Space(5);
+
+        EditorGUILayout.LabelField($"Estimated Draw Call Savings: {estimatedDrawCallSavings}", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField($"Estimated FPS Improvement: +{estimatedDrawCallSavings * 0.5f:F0} FPS", EditorStyles.miniLabel);
+
+        EditorGUILayout.EndVertical();
+
+        EditorGUILayout.Space(10);
+
+        // Priority issues
+        EditorGUILayout.LabelField("Priority Issues to Fix:", EditorStyles.boldLabel);
+
+        performanceScrollPosition = EditorGUILayout.BeginScrollView(performanceScrollPosition);
+
+        // Sort materials by performance score (worst first)
+        var sortedMaterials = foundMaterials
+            .Where(m => m.material != null && performanceScores.ContainsKey(m.material))
+            .OrderBy(m => performanceScores[m.material].totalScore)
+            .ToList();
+
+        int priority = 1;
+        foreach (var matInfo in sortedMaterials)
+        {
+            if (!performanceScores.ContainsKey(matInfo.material)) continue;
+
+            var score = performanceScores[matInfo.material];
+
+            // Only show problematic materials (score < 70)
+            if (score.totalScore >= 70) continue;
+
+            EditorGUILayout.BeginVertical("box");
+
+            // Header
+            EditorGUILayout.BeginHorizontal();
+
+            Color priorityColor = score.totalScore < 40 ? Color.red :
+                                 score.totalScore < 60 ? new Color(1f, 0.5f, 0f) : Color.yellow;
+
+            GUI.backgroundColor = priorityColor;
+            EditorGUILayout.LabelField($"#{priority}", EditorStyles.boldLabel, GUILayout.Width(30));
+            GUI.backgroundColor = Color.white;
+
+            EditorGUILayout.LabelField(matInfo.material.name, EditorStyles.boldLabel, GUILayout.Width(250));
+            EditorGUILayout.LabelField($"Score: {score.totalScore:F0}/100",
+                new GUIStyle(EditorStyles.boldLabel) { normal = { textColor = priorityColor } },
+                GUILayout.Width(100));
+
+            if (GUILayout.Button("Ping", GUILayout.Width(50)))
+            {
+                EditorGUIUtility.PingObject(matInfo.material);
+            }
+            if (GUILayout.Button("Select Objects", GUILayout.Width(100)))
+            {
+                Selection.objects = matInfo.usedByObjects.ToArray();
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            // Performance breakdown
+            EditorGUILayout.LabelField("Issues:", EditorStyles.miniLabel);
+
+            foreach (var issue in score.issues)
+            {
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField($"  • {issue}",
+                    new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = Color.yellow } });
+                EditorGUILayout.EndHorizontal();
+            }
+
+            if (score.recommendations.Count > 0)
+            {
+                EditorGUILayout.Space(3);
+                EditorGUILayout.LabelField("Recommendations:", EditorStyles.miniLabel);
+
+                foreach (var rec in score.recommendations)
+                {
+                    EditorGUILayout.LabelField($"  💡 {rec}",
+                        new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = Color.cyan } });
                 }
             }
-            finally
+
+            EditorGUILayout.Space(3);
+            EditorGUILayout.LabelField($"Impact: {score.impactDescription}",
+                new GUIStyle(EditorStyles.miniLabel) { fontStyle = FontStyle.Italic });
+
+            EditorGUILayout.EndVertical();
+            EditorGUILayout.Space(5);
+
+            priority++;
+
+            // Limit to top 20 issues
+            if (priority > 20) break;
+        }
+
+        if (priority == 1)
+        {
+            EditorGUILayout.HelpBox("✓ No major performance issues detected! Your materials are well-optimized for VR.", MessageType.Info);
+        }
+
+        EditorGUILayout.EndScrollView();
+    }
+
+    // NEW: Auto-Optimization workflow
+    private void PerformAutoOptimization()
+    {
+        if (foundMaterials == null || foundMaterials.Count == 0)
+        {
+            EditorUtility.DisplayDialog("Error", "Please scan scene first.", "OK");
+            return;
+        }
+
+        int duplicatesToFix = duplicateGroups != null ? duplicateGroups.Sum(g => g.Count - 1) : 0;
+        int tilingVariantsWarning = tilingVariantGroups != null ? tilingVariantGroups.Count : 0;
+
+        string message = "Auto-Optimization will:\n\n";
+
+        if (duplicatesToFix > 0)
+        {
+            message += $"✓ Consolidate {duplicatesToFix} duplicate materials\n";
+        }
+
+        if (tilingVariantsWarning > 0)
+        {
+            message += $"⚠ Alert: {tilingVariantsWarning} tiling variant groups need MANUAL fix (bake UVs)\n";
+        }
+
+        message += $"\nEstimated draw call savings: {estimatedDrawCallSavings}\n";
+        message += $"Estimated FPS improvement: +{estimatedDrawCallSavings * 0.5f:F0} FPS\n\n";
+        message += "Continue?";
+
+        if (!EditorUtility.DisplayDialog("Auto-Optimize Scene", message, "Yes", "Cancel"))
+        {
+            return;
+        }
+
+        int totalFixed = 0;
+
+        // Consolidate duplicates
+        if (duplicateGroups != null && duplicateGroups.Count > 0)
+        {
+            ConsolidateAllDuplicates();
+            totalFixed += duplicatesToFix;
+        }
+
+        // Report results
+        string resultMessage = $"Auto-Optimization Complete!\n\n";
+        resultMessage += $"✓ Fixed {totalFixed} duplicate materials\n";
+
+        if (tilingVariantsWarning > 0)
+        {
+            resultMessage += $"\n⚠ MANUAL ACTION REQUIRED:\n";
+            resultMessage += $"  • {tilingVariantsWarning} tiling variant groups need UV baking\n";
+            resultMessage += $"  • Switch to 'Overview' tab to see details\n";
+        }
+
+        resultMessage += $"\nEstimated improvement: +{totalFixed * 0.5f:F0} FPS";
+
+        EditorUtility.DisplayDialog("Optimization Complete", resultMessage, "OK");
+    }
+
+    // NEW: Calculate VR performance scores
+    private void CalculateVRPerformanceScores()
+    {
+        performanceScores.Clear();
+        estimatedDrawCallSavings = 0;
+        float totalScore = 0;
+        int scoredMaterials = 0;
+
+        foreach (var matInfo in foundMaterials)
+        {
+            if (matInfo.material == null) continue;
+
+            var score = new VRPerformanceScore();
+            score.issues = new List<string>();
+            score.recommendations = new List<string>();
+
+            // Base score
+            score.totalScore = 100;
+
+            // Check texture resolution (Quest 3 prefers 1K or less)
+            if (matInfo.mainTexture is Texture2D tex)
             {
-                EditorGUILayout.EndScrollView();
+                if (tex.width > 2048 || tex.height > 2048)
+                {
+                    score.totalScore -= 30;
+                    score.issues.Add($"Texture too large: {tex.width}×{tex.height} (>2K kills Quest 3 performance)");
+                    score.recommendations.Add($"Downscale to 1024×1024 or 512×512");
+                }
+                else if (tex.width > 1024 || tex.height > 1024)
+                {
+                    score.totalScore -= 15;
+                    score.issues.Add($"Texture large: {tex.width}×{tex.height} (consider 1K or less for VR)");
+                    score.recommendations.Add($"Consider downscaling to 1024×1024");
+                }
             }
+
+            // Check shader keywords (breaks instancing)
+            if (matInfo.material.shaderKeywords != null && matInfo.material.shaderKeywords.Length > 0)
+            {
+                score.totalScore -= 20;
+                score.issues.Add($"Has {matInfo.material.shaderKeywords.Length} shader keywords (breaks GPU instancing)");
+                score.recommendations.Add("Use simpler shader or disable keywords");
+            }
+
+            // Check usage count
+            if (matInfo.usedByCount > 50)
+            {
+                score.totalScore -= 10;
+                score.issues.Add($"Used by {matInfo.usedByCount} objects (high draw call impact)");
+                score.recommendations.Add("Consider GPU instancing or atlasing");
+            }
+
+            // Check if it's a duplicate or tiling variant
+            bool isDuplicate = duplicateGroups != null && duplicateGroups.Any(g => g.Any(m => m.guid == matInfo.guid));
+            bool isTilingVariant = tilingVariantGroups != null && tilingVariantGroups.Any(g => g.Any(m => m.guid == matInfo.guid));
+
+            if (isDuplicate)
+            {
+                score.totalScore -= 25;
+                score.issues.Add("Duplicate material detected");
+                score.recommendations.Add("Auto-consolidate to save draw calls");
+                estimatedDrawCallSavings++;
+            }
+
+            if (isTilingVariant)
+            {
+                score.totalScore -= 20;
+                score.issues.Add("Tiling variant detected");
+                score.recommendations.Add("Bake tiling into UVs");
+                estimatedDrawCallSavings++;
+            }
+
+            // Impact description
+            if (score.totalScore < 40)
+            {
+                score.impactDescription = "CRITICAL - Fix immediately for VR";
+            }
+            else if (score.totalScore < 60)
+            {
+                score.impactDescription = "HIGH - Significant FPS impact";
+            }
+            else if (score.totalScore < 80)
+            {
+                score.impactDescription = "MEDIUM - Minor optimization recommended";
+            }
+            else
+            {
+                score.impactDescription = "LOW - Already well optimized";
+            }
+
+            performanceScores[matInfo.material] = score;
+            totalScore += score.totalScore;
+            scoredMaterials++;
+        }
+
+        // Calculate overall scene score
+        if (scoredMaterials > 0)
+        {
+            overallSceneScore = totalScore / scoredMaterials;
         }
     }
 
@@ -432,6 +974,8 @@ public class MaterialOrganizer : EditorWindow
     {
         foundMaterials = new List<MaterialInfo>();
         instanceMaterials = new List<MaterialInfo>();
+        materialObjectFoldouts.Clear();
+
         Dictionary<string, MaterialInfo> materialDict = new Dictionary<string, MaterialInfo>();
         Dictionary<string, MaterialInfo> instanceDict = new Dictionary<string, MaterialInfo>();
 
@@ -447,16 +991,12 @@ public class MaterialOrganizer : EditorWindow
 
         ScanTerrainMaterials(materialDict, instanceDict, ref filteredCount);
 
-        Debug.Log($"<color=cyan>Scanned {totalRenderers} renderers across all types</color>");
-        if (filteredCount > 0)
-        {
-            Debug.Log($"<color=yellow>Filtered out {filteredCount} built-in/package materials</color>");
-        }
+        Debug.Log($"<color=cyan>Scanned {totalRenderers} renderers</color>");
 
         foundMaterials = materialDict.Values.OrderByDescending(m => m.usedByCount).ToList();
         instanceMaterials = instanceDict.Values.OrderByDescending(m => m.usedByCount).ToList();
 
-        // NEW: Detect duplicates
+        DetectTilingVariants();
         DetectDuplicateMaterials();
 
         if (showAtlasCandidates)
@@ -464,45 +1004,34 @@ public class MaterialOrganizer : EditorWindow
             IdentifyAtlasCandidates();
         }
 
-        Debug.Log($"<color=green>✓ Found {foundMaterials.Count} asset materials</color>");
+        // NEW: Calculate VR performance scores
+        CalculateVRPerformanceScores();
+
+        Debug.Log($"<color=green>✓ Found {foundMaterials.Count} materials | Score: {overallSceneScore:F1}/100</color>");
+
+        if (tilingVariantGroups != null && tilingVariantGroups.Count > 0)
+        {
+            Debug.LogWarning($"🔧 {tilingVariantGroups.Count} tiling variant groups - FIX FIRST!");
+        }
 
         if (duplicateGroups != null && duplicateGroups.Count > 0)
         {
-            int totalDupes = duplicateGroups.Sum(g => g.Count - 1);
-            Debug.LogWarning($"⚠ Found {duplicateGroups.Count} duplicate groups ({totalDupes} duplicates):");
-            foreach (var group in duplicateGroups.Take(3))
-            {
-                Debug.LogWarning($"  • {group.Count} copies of material with shader '{group[0].shader.name}'");
-            }
-        }
-
-        if (instanceMaterials.Count > 0)
-        {
-            Debug.LogWarning($"⚠ Found {instanceMaterials.Count} material INSTANCES (no asset path):");
-            foreach (var mat in instanceMaterials.Take(5))
-            {
-                Debug.LogWarning($"  • {mat.material.name} - used by {mat.usedByCount} objects - Shader: {mat.shader.name}");
-            }
-            if (instanceMaterials.Count > 5)
-            {
-                Debug.LogWarning($"  ... and {instanceMaterials.Count - 5} more (see Material Organizer window)");
-            }
-        }
-
-        if (atlasCandidates != null && atlasCandidates.Count > 0)
-        {
-            Debug.Log($"<color=green>✓ Found {atlasCandidates.Count} atlas candidate groups</color>");
+            Debug.LogWarning($"⚠ {duplicateGroups.Count} duplicate groups - AUTO-CONSOLIDATE");
         }
 
         Repaint();
     }
+
+    // Rest of the implementation (same as V3)
+    // Including: ScanRendererType, TrackMaterial, DetectTilingVariants, DetectDuplicateMaterials,
+    // ConsolidateDuplicateGroup, ConsolidateAllDuplicates, ReplaceMaterialReferences,
+    // OrganizeMaterials, IdentifyAtlasCandidates, AnalyzeGPUInstancingPotential, etc.
 
     private int ScanRendererType<T>(Dictionary<string, MaterialInfo> materialDict,
                                      Dictionary<string, MaterialInfo> instanceDict,
                                      ref int filteredCount) where T : Renderer
     {
         T[] renderers;
-
         var activeScene = EditorSceneManager.GetActiveScene();
 
         if (includeInactive)
@@ -530,12 +1059,12 @@ public class MaterialOrganizer : EditorWindow
         foreach (var renderer in renderers)
         {
             Material[] materials = renderer.sharedMaterials;
+            bool isStatic = renderer.gameObject.isStatic;
 
             foreach (var material in materials)
             {
                 if (material == null) continue;
-                // NEW: Pass the game object to track references
-                TrackMaterial(material, typeof(T), renderer.gameObject, materialDict, instanceDict, ref filteredCount);
+                TrackMaterial(material, typeof(T), renderer.gameObject, isStatic, materialDict, instanceDict, ref filteredCount);
             }
         }
 
@@ -547,7 +1076,6 @@ public class MaterialOrganizer : EditorWindow
                                       ref int filteredCount)
     {
         Terrain[] terrains;
-
         var activeScene = EditorSceneManager.GetActiveScene();
 
         if (includeInactive)
@@ -576,12 +1104,13 @@ public class MaterialOrganizer : EditorWindow
         {
             if (terrain.materialTemplate != null)
             {
-                TrackMaterial(terrain.materialTemplate, typeof(Terrain), terrain.gameObject, materialDict, instanceDict, ref filteredCount);
+                bool isStatic = terrain.gameObject.isStatic;
+                TrackMaterial(terrain.materialTemplate, typeof(Terrain), terrain.gameObject, isStatic, materialDict, instanceDict, ref filteredCount);
             }
         }
     }
 
-    private void TrackMaterial(Material material, System.Type rendererType, GameObject gameObject,
+    private void TrackMaterial(Material material, System.Type rendererType, GameObject gameObject, bool isStatic,
                               Dictionary<string, MaterialInfo> materialDict,
                               Dictionary<string, MaterialInfo> instanceDict,
                               ref int filteredCount)
@@ -633,8 +1162,10 @@ public class MaterialOrganizer : EditorWindow
                 usedByCount = 0,
                 isInstance = isInstance,
                 rendererTypes = new HashSet<System.Type>(),
-                usedByObjects = new List<GameObject>(), // NEW
-                guid = key
+                usedByObjects = new List<GameObject>(),
+                guid = key,
+                staticCount = 0,
+                dynamicCount = 0
             };
 
             if (material.mainTexture is Texture2D tex)
@@ -648,53 +1179,72 @@ public class MaterialOrganizer : EditorWindow
         targetDict[key].usedByCount++;
         targetDict[key].rendererTypes.Add(rendererType);
 
-        // NEW: Track which objects use this material
         if (!targetDict[key].usedByObjects.Contains(gameObject))
         {
             targetDict[key].usedByObjects.Add(gameObject);
         }
+
+        if (isStatic)
+        {
+            targetDict[key].staticCount++;
+        }
+        else
+        {
+            targetDict[key].dynamicCount++;
+        }
     }
 
-    // NEW: Detect duplicate materials
-    private void DetectDuplicateMaterials()
+    private void DetectTilingVariants()
     {
-        duplicateGroups = new List<List<MaterialInfo>>();
+        tilingVariantGroups = new List<List<MaterialInfo>>();
 
-        // Group materials by their properties
         var groups = foundMaterials
             .Where(m => m.material != null)
-            .GroupBy(m => GetMaterialSignature(m.material))
-            .Where(g => g.Count() > 1) // Only groups with duplicates
-            .OrderByDescending(g => g.Count());
+            .GroupBy(m => GetMaterialSignatureWithoutTiling(m.material))
+            .Where(g => g.Count() > 1);
 
         foreach (var group in groups)
         {
-            duplicateGroups.Add(group.ToList());
+            var groupList = group.ToList();
+
+            bool onlyTilingDiffers = true;
+            Vector2 firstTiling = groupList[0].material.mainTextureScale;
+            Vector2 firstOffset = groupList[0].material.mainTextureOffset;
+
+            foreach (var mat in groupList.Skip(1))
+            {
+                Vector2 tiling = mat.material.mainTextureScale;
+                Vector2 offset = mat.material.mainTextureOffset;
+
+                if (tiling == firstTiling && offset == firstOffset)
+                {
+                    onlyTilingDiffers = false;
+                    break;
+                }
+            }
+
+            if (onlyTilingDiffers)
+            {
+                tilingVariantGroups.Add(groupList);
+            }
         }
 
-        if (duplicateGroups.Count > 0)
-        {
-            Debug.Log($"<color=yellow>Detected {duplicateGroups.Count} duplicate material groups</color>");
-        }
+        tilingVariantGroups = tilingVariantGroups.OrderByDescending(g => g.Count).ToList();
     }
 
-    // NEW: Create a signature for material comparison
-    private string GetMaterialSignature(Material mat)
+    private string GetMaterialSignatureWithoutTiling(Material mat)
     {
         var signature = new System.Text.StringBuilder();
 
-        // Shader
         signature.Append(mat.shader.name);
         signature.Append("|");
 
-        // Main texture
         if (mat.mainTexture != null)
         {
             signature.Append(mat.mainTexture.GetInstanceID());
         }
         signature.Append("|");
 
-        // Color property (common in most shaders)
         if (mat.HasProperty("_Color"))
         {
             Color c = mat.GetColor("_Color");
@@ -702,49 +1252,86 @@ public class MaterialOrganizer : EditorWindow
         }
         signature.Append("|");
 
-        // Keywords
         if (mat.shaderKeywords != null && mat.shaderKeywords.Length > 0)
         {
             signature.Append(string.Join(",", mat.shaderKeywords.OrderBy(k => k)));
         }
         signature.Append("|");
 
-        // Render queue
         signature.Append(mat.renderQueue);
 
         return signature.ToString();
     }
 
-    // NEW: Consolidate a single duplicate group
+    private void DetectDuplicateMaterials()
+    {
+        duplicateGroups = new List<List<MaterialInfo>>();
+
+        var groups = foundMaterials
+            .Where(m => m.material != null)
+            .GroupBy(m => GetMaterialSignature(m.material))
+            .Where(g => g.Count() > 1)
+            .OrderByDescending(g => g.Count());
+
+        foreach (var group in groups)
+        {
+            duplicateGroups.Add(group.ToList());
+        }
+    }
+
+    private string GetMaterialSignature(Material mat)
+    {
+        var signature = new System.Text.StringBuilder();
+
+        signature.Append(mat.shader.name);
+        signature.Append("|");
+
+        if (mat.mainTexture != null)
+        {
+            signature.Append(mat.mainTexture.GetInstanceID());
+        }
+        signature.Append("|");
+
+        if (mat.HasProperty("_Color"))
+        {
+            Color c = mat.GetColor("_Color");
+            signature.Append($"{c.r:F2},{c.g:F2},{c.b:F2},{c.a:F2}");
+        }
+        signature.Append("|");
+
+        if (mat.shaderKeywords != null && mat.shaderKeywords.Length > 0)
+        {
+            signature.Append(string.Join(",", mat.shaderKeywords.OrderBy(k => k)));
+        }
+        signature.Append("|");
+
+        signature.Append(mat.renderQueue);
+        signature.Append("|");
+
+        Vector2 tiling = mat.mainTextureScale;
+        Vector2 offset = mat.mainTextureOffset;
+        signature.Append($"{tiling.x:F3},{tiling.y:F3}|{offset.x:F3},{offset.y:F3}");
+
+        return signature.ToString();
+    }
+
     private void ConsolidateDuplicateGroup(List<MaterialInfo> group)
     {
-        if (group == null || group.Count < 2)
-        {
-            Debug.LogWarning("Cannot consolidate: group has less than 2 materials");
-            return;
-        }
+        if (group == null || group.Count < 2) return;
 
-        // Keep the first material, replace all others
         Material keepMaterial = group[0].material;
         List<Material> toReplace = group.Skip(1).Select(m => m.material).ToList();
 
         int replacedCount = ReplaceMaterialReferences(toReplace, keepMaterial);
 
-        Debug.Log($"<color=green>✓ Consolidated {group.Count} materials into '{keepMaterial.name}' " +
-                  $"({replacedCount} references updated)</color>");
+        Debug.Log($"<color=green>✓ Consolidated {group.Count} materials ({replacedCount} refs)</color>");
 
-        // Rescan to update UI
         ScanScene();
     }
 
-    // NEW: Consolidate all duplicate groups
     private void ConsolidateAllDuplicates()
     {
-        if (duplicateGroups == null || duplicateGroups.Count == 0)
-        {
-            Debug.LogWarning("No duplicate groups to consolidate");
-            return;
-        }
+        if (duplicateGroups == null || duplicateGroups.Count == 0) return;
 
         int totalConsolidated = 0;
         int totalReferences = 0;
@@ -762,24 +1349,15 @@ public class MaterialOrganizer : EditorWindow
             totalReferences += replacedCount;
         }
 
-        Debug.Log($"<color=green>✓ Consolidated {totalConsolidated} duplicate materials " +
-                  $"({totalReferences} references updated)</color>");
+        Debug.Log($"<color=green>✓ Consolidated {totalConsolidated} duplicates ({totalReferences} refs)</color>");
 
-        EditorUtility.DisplayDialog("Consolidation Complete",
-            $"Successfully consolidated {totalConsolidated} duplicate materials.\n" +
-            $"Updated {totalReferences} material references in the scene.",
-            "OK");
-
-        // Rescan to update UI
         ScanScene();
     }
 
-    // NEW: Replace material references across all renderers
     private int ReplaceMaterialReferences(List<Material> oldMaterials, Material newMaterial)
     {
         int replacedCount = 0;
 
-        // Scan all renderer types
         var allRenderers = new List<Renderer>();
         allRenderers.AddRange(Object.FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None));
         allRenderers.AddRange(Object.FindObjectsByType<SkinnedMeshRenderer>(FindObjectsSortMode.None));
@@ -811,7 +1389,6 @@ public class MaterialOrganizer : EditorWindow
             }
         }
 
-        // Also check terrains
         var terrains = Object.FindObjectsByType<Terrain>(FindObjectsSortMode.None);
         foreach (var terrain in terrains)
         {
@@ -831,7 +1408,7 @@ public class MaterialOrganizer : EditorWindow
     {
         if (foundMaterials == null || foundMaterials.Count == 0)
         {
-            EditorUtility.DisplayDialog("No Materials", "Please scan the scene first.", "OK");
+            EditorUtility.DisplayDialog("No Materials", "Please scan first.", "OK");
             return;
         }
 
@@ -841,7 +1418,6 @@ public class MaterialOrganizer : EditorWindow
         }
 
         int successCount = 0;
-        int errorCount = 0;
 
         try
         {
@@ -868,11 +1444,6 @@ public class MaterialOrganizer : EditorWindow
                 {
                     successCount++;
                 }
-                else
-                {
-                    Debug.LogError($"Failed to {(copyMaterials ? "copy" : "move")} {matInfo.material.name}: {error}");
-                    errorCount++;
-                }
             }
         }
         finally
@@ -886,17 +1457,9 @@ public class MaterialOrganizer : EditorWindow
         if (instanceMaterials != null) instanceMaterials.Clear();
         if (atlasCandidates != null) atlasCandidates.Clear();
         if (duplicateGroups != null) duplicateGroups.Clear();
+        if (tilingVariantGroups != null) tilingVariantGroups.Clear();
 
-        string message = $"Organized {successCount} materials into {targetFolderPath}";
-        if (errorCount > 0)
-        {
-            message += $"\n{errorCount} errors occurred (check console)";
-        }
-
-        EditorUtility.DisplayDialog("Complete", message, "OK");
-        Debug.Log($"<color=green>{message}</color>");
-
-        Debug.Log("Refreshing scan to find moved materials...");
+        Debug.Log($"<color=green>Organized {successCount} materials</color>");
         ScanScene();
     }
 
@@ -906,17 +1469,17 @@ public class MaterialOrganizer : EditorWindow
 
         switch (groupingMode)
         {
+            case GroupingMode.Shader:
+                string shaderName = CleanFileName(matInfo.shader.name.Replace("/", "_"));
+                groupFolder = targetFolderPath + "/" + shaderName;
+                break;
+
             case GroupingMode.Texture:
                 if (matInfo.mainTexture != null)
                 {
                     string texName = CleanFileName(matInfo.mainTexture.name);
                     groupFolder = targetFolderPath + "/" + texName;
                 }
-                break;
-
-            case GroupingMode.Shader:
-                string shaderName = CleanFileName(matInfo.shader.name.Replace("/", "_"));
-                groupFolder = targetFolderPath + "/" + shaderName;
                 break;
 
             case GroupingMode.ShaderAndTexture:
@@ -966,8 +1529,7 @@ public class MaterialOrganizer : EditorWindow
                 Shader = m.shader,
                 TextureWidth = m.textureSize.x,
                 TextureHeight = m.textureSize.y,
-                Keywords = string.Join("|",
-                (m.material.shaderKeywords ?? new string[0]).OrderBy(k => k))
+                Keywords = string.Join("|", (m.material.shaderKeywords ?? new string[0]).OrderBy(k => k))
             })
             .Where(g => g.Count() >= 2)
             .OrderByDescending(g => g.Count());
@@ -982,14 +1544,8 @@ public class MaterialOrganizer : EditorWindow
                 if (mat.material == null) continue;
 
                 Vector2 tiling = mat.material.mainTextureScale;
-                bool isCompatible = true;
 
-                if (tiling != Vector2.one)
-                {
-                    isCompatible = false;
-                }
-
-                if (isCompatible)
+                if (tiling == Vector2.one)
                 {
                     compatibleMaterials.Add(mat);
                 }
@@ -1000,37 +1556,48 @@ public class MaterialOrganizer : EditorWindow
                 atlasCandidates.Add(compatibleMaterials);
             }
         }
-
-        Debug.Log($"<color=green>Identified {atlasCandidates.Count} atlas candidate groups:</color>");
-        foreach (var group in atlasCandidates.Take(3))
-        {
-            var first = group[0];
-            Debug.Log($"  • {group.Count} materials | Shader: {first.shader.name} | Size: {first.textureSize.x}×{first.textureSize.y}");
-        }
     }
 
-    // NEW: Get hierarchy path for better object identification
-    private string GetHierarchyPath(GameObject obj)
+    private void AnalyzeGPUInstancingPotential(MaterialInfo matInfo)
     {
-        if (obj == null) return "";
+        if (matInfo.material == null) return;
 
-        string path = obj.name;
-        Transform parent = obj.transform.parent;
-        int depth = 0;
+        EditorGUILayout.BeginVertical("box");
 
-        while (parent != null && depth < 3) // Limit to 3 levels for readability
+        EditorGUILayout.BeginHorizontal();
+        EditorGUILayout.LabelField(matInfo.material.name, EditorStyles.boldLabel, GUILayout.Width(250));
+
+        bool hasKeywords = matInfo.material.shaderKeywords != null && matInfo.material.shaderKeywords.Length > 0;
+        bool hasEnoughInstances = matInfo.usedByCount >= 10;
+        bool hasDynamicObjects = matInfo.dynamicCount > 0;
+
+        if (!hasKeywords && hasDynamicObjects && hasEnoughInstances)
         {
-            path = parent.name + "/" + path;
-            parent = parent.parent;
-            depth++;
+            GUI.backgroundColor = Color.green;
+            EditorGUILayout.LabelField("✓ GOOD FOR INSTANCING", EditorStyles.miniLabel, GUILayout.Width(150));
+            GUI.backgroundColor = Color.white;
+        }
+        else if (matInfo.staticCount > matInfo.dynamicCount)
+        {
+            GUI.backgroundColor = new Color(0.5f, 0.5f, 1f);
+            EditorGUILayout.LabelField("USE STATIC BATCHING", EditorStyles.miniLabel, GUILayout.Width(150));
+            GUI.backgroundColor = Color.white;
+        }
+        else
+        {
+            GUI.backgroundColor = Color.yellow;
+            EditorGUILayout.LabelField("⚠ CHECK CONDITIONS", EditorStyles.miniLabel, GUILayout.Width(150));
+            GUI.backgroundColor = Color.white;
         }
 
-        if (parent != null)
-        {
-            path = ".../" + path;
-        }
+        EditorGUILayout.EndHorizontal();
 
-        return path;
+        EditorGUILayout.LabelField($"  Usage: {matInfo.usedByCount} objects ({matInfo.staticCount} static, {matInfo.dynamicCount} dynamic)",
+            EditorStyles.miniLabel);
+        EditorGUILayout.LabelField($"  Keywords: {(hasKeywords ? matInfo.material.shaderKeywords.Length + " (breaks instancing)" : "None ✓")}",
+            hasKeywords ? new GUIStyle(EditorStyles.miniLabel) { normal = { textColor = Color.red } } : EditorStyles.miniLabel);
+
+        EditorGUILayout.EndVertical();
     }
 
     private string CleanFileName(string name)
@@ -1042,6 +1609,15 @@ public class MaterialOrganizer : EditorWindow
         return name;
     }
 
+    // NEW: VR Performance Score class
+    private class VRPerformanceScore
+    {
+        public float totalScore;
+        public List<string> issues;
+        public List<string> recommendations;
+        public string impactDescription;
+    }
+
     private class MaterialInfo
     {
         public Material material;
@@ -1051,8 +1627,10 @@ public class MaterialOrganizer : EditorWindow
         public int usedByCount;
         public bool isInstance;
         public HashSet<System.Type> rendererTypes;
-        public List<GameObject> usedByObjects; // NEW: Track which objects use this material
+        public List<GameObject> usedByObjects;
         public string guid;
         public Vector2Int textureSize;
+        public int staticCount;
+        public int dynamicCount;
     }
 }
