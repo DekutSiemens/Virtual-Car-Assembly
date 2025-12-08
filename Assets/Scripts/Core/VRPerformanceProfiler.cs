@@ -5,6 +5,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.IO;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
+
 
 /// <summary>
 /// Advanced VR Performance Profiler for Quest 3 Optimization
@@ -107,11 +111,12 @@ public class VRPerformanceProfiler : MonoBehaviour
             lastSampleTime = Time.realtimeSinceStartup;
         }
 
-        // Manual export on 'E' key press
-        if (enableManualExport && Input.GetKeyDown(KeyCode.E))
+        // Manual export on 'E' key press (supports old + new input backends)
+        if (enableManualExport && IsExportKeyPressed())
         {
             ExportSessionData();
         }
+
     }
 
     private void CollectSample()
@@ -572,6 +577,19 @@ public class VRPerformanceProfiler : MonoBehaviour
 
         AssetDatabase.Refresh();
     }
+    private bool IsExportKeyPressed()
+    {
+#if ENABLE_INPUT_SYSTEM
+        // New Input System
+        return Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame;
+#elif ENABLE_LEGACY_INPUT_MANAGER
+    // Old Input Manager
+    return Input.GetKeyDown(KeyCode.E);
+#else
+    return false;
+#endif
+    }
+
 
     [System.Serializable]
     private class PerformanceSample
