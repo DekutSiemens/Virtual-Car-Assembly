@@ -977,134 +977,153 @@ namespace VROptimization
         {
             var atlasSet = new AtlasTextureSet();
 
-            // Determine which texture types we need to atlas
+            // Determine which texture types we need
             atlasSet.hasNormals = materialTextures.Any(m => m.hasNormalMap);
             atlasSet.hasMetallic = materialTextures.Any(m => m.hasMetallicMap);
             atlasSet.hasOcclusion = materialTextures.Any(m => m.hasOcclusionMap);
             atlasSet.hasEmission = materialTextures.Any(m => m.hasEmissionMap);
 
-            // Prepare base map textures (REQUIRED)
+            // Prepare base map textures
             var baseMaps = new List<Texture2D>();
             foreach (var matTex in materialTextures)
             {
                 Texture2D baseTex = matTex.baseMap;
                 if (baseTex == null)
                 {
-                    // Create solid color texture
                     baseTex = CreateSolidColorTexture(matTex.baseColor, 64);
                 }
                 baseMaps.Add(CreatePaddedTexture(baseTex, padding));
             }
 
-            // Create base atlas
+            // CRITICAL: Pack ONLY base maps - this defines the UV layout for ALL atlases
             atlasSet.baseAtlas = new Texture2D(atlasSize, atlasSize, TextureFormat.RGBA32, true);
             atlasSet.baseMapRects = atlasSet.baseAtlas.PackTextures(baseMaps.ToArray(), padding, atlasSize, false);
 
-            // Clean up temporary padded textures
+            // Store the UV layout - ALL other atlases MUST use this same layout
+            Rect[] uvLayout = atlasSet.baseMapRects;
+
+            // Clean up padded textures
             foreach (var tex in baseMaps)
             {
                 if (tex != null) DestroyImmediate(tex);
             }
 
-            // Create normal atlas if needed
+            // Build other atlases using THE SAME UV layout
             if (atlasSet.hasNormals)
             {
-                var normalMaps = new List<Texture2D>();
-                foreach (var matTex in materialTextures)
-                {
-                    Texture2D normalTex = matTex.normalMap;
-                    if (normalTex == null)
-                    {
-                        // Flat normal map (128, 128, 255) = pointing straight up
-                        normalTex = CreateSolidColorTexture(new Color(0.5f, 0.5f, 1f, 1f), 64);
-                    }
-                    normalMaps.Add(CreatePaddedTexture(normalTex, padding));
-                }
-
-                atlasSet.normalAtlas = new Texture2D(atlasSize, atlasSize, TextureFormat.RGBA32, true);
-                atlasSet.normalMapRects = atlasSet.normalAtlas.PackTextures(normalMaps.ToArray(), padding, atlasSize, false);
-
-                foreach (var tex in normalMaps)
-                {
-                    if (tex != null) DestroyImmediate(tex);
-                }
+                // Flat normal map default (128, 128, 255 in RGB → 0.5, 0.5, 1.0 in Unity)
+                atlasSet.normalAtlas = BuildAtlasWithFixedLayout(
+                    materialTextures,
+                    uvLayout,
+                    atlasSize,
+                    padding,
+                    matTex => matTex.normalMap,
+                    matTex => new Color(0.5f, 0.5f, 1f, 1f)
+                );
+                atlasSet.normalMapRects = uvLayout;
             }
 
-            // Create metallic/smoothness atlas if needed
             if (atlasSet.hasMetallic)
             {
-                var metallicMaps = new List<Texture2D>();
-                foreach (var matTex in materialTextures)
-                {
-                    Texture2D metallicTex = matTex.metallicMap;
-                    if (metallicTex == null)
-                    {
-                        // Create metallic map from material properties
-                        // R = Metallic, A = Smoothness (URP convention)
-                        Color metallicColor = new Color(matTex.metallic, matTex.metallic, matTex.metallic, matTex.smoothness);
-                        metallicTex = CreateSolidColorTexture(metallicColor, 64);
-                    }
-                    metallicMaps.Add(CreatePaddedTexture(metallicTex, padding));
-                }
-
-                atlasSet.metallicAtlas = new Texture2D(atlasSize, atlasSize, TextureFormat.RGBA32, true);
-                atlasSet.metallicMapRects = atlasSet.metallicAtlas.PackTextures(metallicMaps.ToArray(), padding, atlasSize, false);
-
-                foreach (var tex in metallicMaps)
-                {
-                    if (tex != null) DestroyImmediate(tex);
-                }
+                // Metallic + Smoothness (R=metallic, A=smoothness)
+                atlasSet.metallicAtlas = BuildAtlasWithFixedLayout(
+                    materialTextures,
+                    uvLayout,
+                    atlasSize,
+                    padding,
+                    matTex => matTex.metallicMap,
+                    matTex => new Color(matTex.metallic, matTex.metallic, matTex.metallic, matTex.smoothness)
+                );
+                atlasSet.metallicMapRects = uvLayout;
             }
 
-            // Create occlusion atlas if needed
             if (atlasSet.hasOcclusion)
             {
-                var occlusionMaps = new List<Texture2D>();
-                foreach (var matTex in materialTextures)
-                {
-                    Texture2D occlusionTex = matTex.occlusionMap;
-                    if (occlusionTex == null)
-                    {
-                        // White = no occlusion
-                        occlusionTex = CreateSolidColorTexture(Color.white, 64);
-                    }
-                    occlusionMaps.Add(CreatePaddedTexture(occlusionTex, padding));
-                }
-
-                atlasSet.occlusionAtlas = new Texture2D(atlasSize, atlasSize, TextureFormat.RGBA32, true);
-                atlasSet.occlusionMapRects = atlasSet.occlusionAtlas.PackTextures(occlusionMaps.ToArray(), padding, atlasSize, false);
-
-                foreach (var tex in occlusionMaps)
-                {
-                    if (tex != null) DestroyImmediate(tex);
-                }
+                // White = no occlusion
+                atlasSet.occlusionAtlas = BuildAtlasWithFixedLayout(
+                    materialTextures,
+                    uvLayout,
+                    atlasSize,
+                    padding,
+                    matTex => matTex.occlusionMap,
+                    matTex => Color.white
+                );
+                atlasSet.occlusionMapRects = uvLayout;
             }
 
-            // Create emission atlas if needed
             if (atlasSet.hasEmission)
             {
-                var emissionMaps = new List<Texture2D>();
-                foreach (var matTex in materialTextures)
-                {
-                    Texture2D emissionTex = matTex.emissionMap;
-                    if (emissionTex == null)
-                    {
-                        // Use emission color or black
-                        emissionTex = CreateSolidColorTexture(matTex.emissionColor, 64);
-                    }
-                    emissionMaps.Add(CreatePaddedTexture(emissionTex, padding));
-                }
-
-                atlasSet.emissionAtlas = new Texture2D(atlasSize, atlasSize, TextureFormat.RGBA32, true);
-                atlasSet.emissionMapRects = atlasSet.emissionAtlas.PackTextures(emissionMaps.ToArray(), padding, atlasSize, false);
-
-                foreach (var tex in emissionMaps)
-                {
-                    if (tex != null) DestroyImmediate(tex);
-                }
+                // Use per-material emission color
+                atlasSet.emissionAtlas = BuildAtlasWithFixedLayout(
+                    materialTextures,
+                    uvLayout,
+                    atlasSize,
+                    padding,
+                    matTex => matTex.emissionMap,
+                    matTex => matTex.emissionColor
+                );
+                atlasSet.emissionMapRects = uvLayout;
             }
 
             return atlasSet;
+        }
+
+        // NEW HELPER: Builds atlas using pre-determined UV layout
+        /// <summary>
+        /// Builds an atlas using a pre-determined UV layout (from base map packing).
+        /// This ensures all texture types (normal, metallic, etc.) align with base map.
+        /// </summary>
+        private Texture2D BuildAtlasWithFixedLayout(
+            List<MaterialTextureSet> materialTextures,
+            Rect[] uvLayout,
+            int atlasSize,
+            int padding,
+            Func<MaterialTextureSet, Texture2D> getTexture,
+            Func<MaterialTextureSet, Color> getDefaultColor)
+        {
+            Texture2D atlas = new Texture2D(atlasSize, atlasSize, TextureFormat.RGBA32, true);
+
+            // Initialize with black
+            Color[] pixels = new Color[atlasSize * atlasSize];
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                pixels[i] = Color.black;
+            }
+            atlas.SetPixels(pixels);
+
+            // Copy each texture into its designated rect
+            for (int i = 0; i < materialTextures.Count; i++)
+            {
+                MaterialTextureSet matTex = materialTextures[i];
+                Texture2D sourceTex = getTexture(matTex);
+                Color defaultColor = getDefaultColor(matTex);
+
+                // Create texture if missing
+                if (sourceTex == null)
+                {
+                    sourceTex = CreateSolidColorTexture(defaultColor, 64);
+                }
+
+                // Add padding
+                Texture2D paddedTex = CreatePaddedTexture(sourceTex, padding);
+                Rect rect = uvLayout[i];
+
+                // Calculate pixel coordinates
+                int startX = Mathf.RoundToInt(rect.x * atlasSize);
+                int startY = Mathf.RoundToInt(rect.y * atlasSize);
+                int width = Mathf.RoundToInt(rect.width * atlasSize);
+                int height = Mathf.RoundToInt(rect.height * atlasSize);
+
+                // Copy pixels to atlas
+                Color[] sourcePixels = paddedTex.GetPixels();
+                atlas.SetPixels(startX, startY, width, height, sourcePixels);
+
+                // Clean up
+                DestroyImmediate(paddedTex);
+            }
+
+            atlas.Apply();
+            return atlas;
         }
 
         /// <summary>
